@@ -4,10 +4,11 @@ import java.net.URI
 import java.util.concurrent.Executors
 
 import au.id.tmm.citizenshipregisterscraper.documents.senate
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.TextractClient
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.{S3WorkingEnvironment, TextractClient}
 import au.id.tmm.utilities.errors.GenericException
 import cats.Eval
 import cats.effect.{ContextShift, ExitCode, IO, IOApp}
+import sttp.client3.asynchttpclient.cats.AsyncHttpClientCatsBackend
 
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 
@@ -25,7 +26,14 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
   override def run(args: List[String]): IO[ExitCode] =
     for {
       reference <- abetzDisclosure
-      client = new TextractClient(executionContext.value)
+      httpClient <- AsyncHttpClientCatsBackend[IO]()
+      s3WorkingEnvironment = new S3WorkingEnvironment(
+        bucket = S3WorkingEnvironment.S3BucketName("au.id.tmm.temp"),
+        namePrefix = S3WorkingEnvironment.S3Key(getClass.getCanonicalName.split('.').toList),
+        httpClient,
+        executionContext.value,
+      )
+      client = new TextractClient(executionContext.value, s3WorkingEnvironment)
       result <- client.run(reference.documentLocation)
     } yield ExitCode.Success
 

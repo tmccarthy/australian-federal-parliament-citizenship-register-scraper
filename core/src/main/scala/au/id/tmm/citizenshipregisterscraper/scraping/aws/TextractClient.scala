@@ -1,23 +1,22 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws
 
-import java.io.InputStream
 import java.net.URI
-import java.nio.ByteBuffer
+import java.util.concurrent.TimeUnit
 
-import cats.effect.{Bracket, IO}
-import org.slf4j.LoggerFactory
+import cats.effect.{IO, Timer}
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
-import software.amazon.awssdk.http.SdkHttpClient
-import software.amazon.awssdk.http.apache.ApacheHttpClient
-import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.textract.TextractAsyncClient
-import software.amazon.awssdk.services.textract.model.S3Object
+import software.amazon.awssdk.services.textract.model._
 
 import scala.concurrent.ExecutionContextExecutor
+import scala.concurrent.duration.FiniteDuration
+import scala.jdk.CollectionConverters._
 
 class TextractClient(
   executionContext: ExecutionContextExecutor,
-  workingS3: TextractClient.WorkingS3,
+  s3WorkingEnvironment: S3WorkingEnvironment,
+)(
+  implicit timer: Timer[IO],
 ) {
 
   private val textractClient = TextractAsyncClient
@@ -28,27 +27,58 @@ class TextractClient(
         .advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR, executionContext)
         .build(),
     )
+    .build()
 
   def run(documentLocation: URI): IO[Unit] =
     for {
-      _ <- ???
-    } yield ???
+      S3WorkingEnvironment.S3ObjectRef(bucket, key) <- s3WorkingEnvironment.s3ObjectCopyFor(documentLocation)
 
-  private def s3ObjectFor(documentLocation: URI): IO[S3Object] =
-    for {
-      _ <- ???
-    } yield ???
+      startAnalysisRequest =
+        StartDocumentAnalysisRequest
+          .builder()
+          .documentLocation(
+            DocumentLocation
+              .builder()
+              .s3Object(
+                S3Object
+                  .builder()
+                  .bucket(bucket.asString)
+                  .name(key.toRaw)
+                  .build(),
+              )
+              .build(),
+          )
+          .featureTypes(FeatureType.FORMS, FeatureType.TABLES)
+          .outputConfig(
+            OutputConfig
+              .builder()
+              .s3Bucket(bucket.asString)
+              .s3Prefix(s3WorkingEnvironment.namePrefix.resolve(S3WorkingEnvironment.S3Key("textract_output")).toRaw)
+              .build(),
+          )
+          .build()
 
-  private def targetS3URIFor(documentLocation: URI): URI = ???
+      startDocumentAnalysisResult <- toIO(textractClient.startDocumentAnalysis(startAnalysisRequest))
 
+      getAnalysisRequest =
+        GetDocumentAnalysisRequest
+          .builder()
+          .jobId(startDocumentAnalysisResult.jobId())
+          .build()
+
+      _ <- IO.sleep(FiniteDuration(10, TimeUnit.SECONDS))
+
+      documentAnalysisResult <- toIO(textractClient.getDocumentAnalysis(getAnalysisRequest))
+
+      _ <- IO {
+        documentAnalysisResult.blocks().asScala.filter(_.blockType() == BlockType.TABLE).foreach { table =>
+          println(table.text())
+        }
+      }
+
+    } yield ()
 
 }
 
 object TextractClient {
-  private val logger = LoggerFactory.getLogger(getClass)
-
-  final case class WorkingS3(
-    bucket: String,
-    prefix: String = "/",
-  )
 }

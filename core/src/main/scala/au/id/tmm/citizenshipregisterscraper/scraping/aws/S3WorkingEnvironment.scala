@@ -1,7 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws
 
 import java.net.URI
-import java.util.concurrent.{CancellationException, CompletableFuture}
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.S3WorkingEnvironment._
 import au.id.tmm.utilities.codec.binarycodecs._
@@ -13,12 +12,7 @@ import cats.syntax.traverse._
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.model.{
-  HeadObjectRequest,
-  HeadObjectResponse,
-  NoSuchKeyException,
-  PutObjectRequest,
-}
+import software.amazon.awssdk.services.s3.model.{HeadObjectRequest, HeadObjectResponse, NoSuchKeyException, PutObjectRequest}
 import sttp.client3.{Response, SttpBackend, _}
 import sttp.model.{HeaderNames, Uri => SttpUri}
 
@@ -27,8 +21,8 @@ import scala.concurrent.ExecutionContextExecutor
 import scala.jdk.CollectionConverters._
 
 class S3WorkingEnvironment(
-  bucket: S3BucketName,
-  namePrefix: S3Key,
+  val bucket: S3BucketName,
+  val namePrefix: S3Key,
   httpClient: SttpBackend[IO, Any],
   executionContext: ExecutionContextExecutor,
 ) {
@@ -134,19 +128,6 @@ class S3WorkingEnvironment(
       }
       .as(S3ObjectRef(bucket, key))
   }
-
-  private def toIO[A](completableFuture: CompletableFuture[A]): IO[A] =
-    IO.cancelable[A] { cb: (Either[Throwable, A] => Unit) =>
-      completableFuture.handle[Unit] { (a: A, e: Throwable) =>
-        (a, e) match {
-          case (_, e: CancellationException) => ()
-          case (_, e)                        => cb(Left(e))
-          case (a, null)                     => cb(Right(a))
-        }
-      }
-
-      IO(completableFuture.cancel(true))
-    }
 
 }
 
