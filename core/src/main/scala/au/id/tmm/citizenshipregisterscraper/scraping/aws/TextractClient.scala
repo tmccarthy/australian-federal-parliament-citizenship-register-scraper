@@ -3,11 +3,19 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws
 import java.net.URI
 import java.util.concurrent.TimeUnit
 
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.TextractClient.{ExtractedTable, logger}
+import au.id.tmm.collections.NonEmptySet
+import au.id.tmm.collections.syntax.toIterableOps
+import au.id.tmm.utilities.errors.syntax._
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.effect.{IO, Timer}
-import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
-import software.amazon.awssdk.services.textract.TextractAsyncClient
+import cats.syntax.traverse.toTraverseOps
+import org.slf4j.{Logger, LoggerFactory}
 import software.amazon.awssdk.services.textract.model._
+import software.amazon.awssdk.services.textract.{TextractClient => AwsTextractClient}
 
+import scala.collection.immutable.ArraySeq
+import scala.collection.{MapView, mutable}
 import scala.concurrent.ExecutionContextExecutor
 import scala.concurrent.duration.FiniteDuration
 import scala.jdk.CollectionConverters._
@@ -15,18 +23,12 @@ import scala.jdk.CollectionConverters._
 class TextractClient(
   executionContext: ExecutionContextExecutor,
   s3WorkingEnvironment: S3WorkingEnvironment,
-)(
-  implicit timer: Timer[IO],
+)(implicit
+  timer: Timer[IO],
 ) {
 
-  private val textractClient = TextractAsyncClient
+  private val textractClient = AwsTextractClient
     .builder()
-    .asyncConfiguration(
-      ClientAsyncConfiguration
-        .builder()
-        .advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR, executionContext)
-        .build(),
-    )
     .build()
 
   def run(documentLocation: URI): IO[Unit] =
@@ -58,7 +60,11 @@ class TextractClient(
           )
           .build()
 
-      startDocumentAnalysisResult <- toIO(textractClient.startDocumentAnalysis(startAnalysisRequest))
+      startDocumentAnalysisResult <- IO(textractClient.startDocumentAnalysis(startAnalysisRequest))
+
+      _ <- IO(logger.info("Sent document analysis request"))
+
+      _ <- IO.sleep(FiniteDuration(1, TimeUnit.MINUTES))
 
       getAnalysisRequest =
         GetDocumentAnalysisRequest
@@ -66,19 +72,117 @@ class TextractClient(
           .jobId(startDocumentAnalysisResult.jobId())
           .build()
 
-      _ <- IO.sleep(FiniteDuration(10, TimeUnit.SECONDS))
+      _ <- IO(logger.info("Getting document analysis"))
 
-      documentAnalysisResult <- toIO(textractClient.getDocumentAnalysis(getAnalysisRequest))
+      documentAnalysisResult <- IO(textractClient.getDocumentAnalysis(getAnalysisRequest))
+      // TODO next token handling
+
+      _ <- IO(logger.info("Received document analysis"))
+
+      tables <- IO.fromEither {
+        tablesFrom(documentAnalysisResult)
+      }
 
       _ <- IO {
-        documentAnalysisResult.blocks().asScala.filter(_.blockType() == BlockType.TABLE).foreach { table =>
-          println(table.text())
-        }
+        tables.foreach(println)
       }
 
     } yield ()
 
+  private def tablesFrom(
+    documentAnalysisResponse: GetDocumentAnalysisResponse,
+  ): ExceptionOr[ArraySeq[ExtractedTable]] = {
+    val blockPerId: MapView[String, Block] =
+      documentAnalysisResponse
+        .blocks()
+        .asScala
+        .groupBy(_.id())
+        .view
+        .mapValues(_.head)
+
+    val tables = documentAnalysisResponse
+      .blocks()
+      .asScala
+      .collect {
+        case block if block.blockType() == BlockType.TABLE => block
+      }
+      .to(ArraySeq)
+
+    tables.traverse { table =>
+      extract(blockPerId, table)
+    }
+  }
+
+  private def extract(blockPerId: MapView[String, Block], table: Block): ExceptionOr[ExtractedTable] =
+    for {
+      cellBlocks <- getChildrenFor(blockPerId, table, expectedType = NonEmptySet.of(BlockType.CELL))
+      cells <- ExceptionOr.catchIn {
+        val cellsPerRowPerColumn: mutable.Map[Int, mutable.Map[Int, String]] = mutable.Map()
+
+        cellBlocks.foreach { block =>
+          cellsPerRowPerColumn
+            .getOrElseUpdate(block.rowIndex(), mutable.Map())
+            .update(block.columnIndex(), textFrom(blockPerId, block).getOrThrow)
+        }
+
+        val numRows: Int = cellsPerRowPerColumn.keySet.max
+        val numColumns: Int =
+          cellsPerRowPerColumn.values.map(_.keySet.max).to(Set).onlyElementOrException.getOrThrow
+
+        (1 to numRows)
+          .map { row =>
+            (1 to numColumns)
+              .map { column =>
+                cellsPerRowPerColumn
+                  .get(row)
+                  .toRight(GenericException(s"Missing row $row"))
+                  .getOrThrow
+                  .get(column)
+                  .toRight(GenericException(s"Missing column $column"))
+                  .getOrThrow
+              }
+              .to(ArraySeq)
+          }
+          .to(ArraySeq)
+      }
+    } yield ExtractedTable(cells)
+
+  // TODO these can contain checkboxes etc
+  private def textFrom(blockPerId: MapView[String, Block], cell: Block): ExceptionOr[String] =
+    for {
+      childBlocks <- getChildrenFor(
+        blockPerId,
+        cell,
+        expectedType = NonEmptySet.of(BlockType.WORD, BlockType.LINE, BlockType.SELECTION_ELEMENT),
+      )
+      words = childBlocks.flatMap(b => Option(b.text()))
+    } yield words.mkString(" ")
+
+  private def getChildrenFor(
+    blockPerId: MapView[String, Block],
+    block: Block,
+    expectedType: NonEmptySet[BlockType],
+  ): ExceptionOr[ArraySeq[Block]] =
+    block.relationships().asScala.to(ArraySeq).flatTraverse {
+      case relationship if relationship.`type` == RelationshipType.CHILD =>
+        relationship.ids.asScala.to(ArraySeq).traverse { id =>
+          blockPerId
+            .get(id)
+            .toRight(GenericException(s"No block for id $id"))
+            .filterOrElse(
+              b => expectedType.contains(b.blockType()),
+              GenericException(s"Block $id is a child expected a type of $expectedType"),
+            )
+        }
+    }
+
 }
 
 object TextractClient {
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  final case class ExtractedTable(
+    cells: ArraySeq[ArraySeq[String]],
+  )
+
 }

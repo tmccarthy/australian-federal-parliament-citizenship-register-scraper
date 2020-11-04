@@ -34,11 +34,11 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
         executionContext.value,
       )
       client = new TextractClient(executionContext.value, s3WorkingEnvironment)
-      result <- client.run(reference.documentLocation)
+      _ <- client.run(reference.documentLocation)
     } yield ExitCode.Success
 
   private val executionContext: Eval[ExecutionContextExecutorService] =
-    Eval.later(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(2)))
+    Eval.later(ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(4)))
 
   override protected implicit def contextShift: ContextShift[IO] = IO.contextShift(executionContext.value)
 }
