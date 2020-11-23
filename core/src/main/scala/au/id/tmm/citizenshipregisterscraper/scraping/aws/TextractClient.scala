@@ -8,6 +8,7 @@ import au.id.tmm.collections.NonEmptySet
 import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.syntax._
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
+import au.id.tmm.utilities.syntax.tuples.->
 import cats.effect.{IO, Timer}
 import cats.syntax.traverse.toTraverseOps
 import org.slf4j.{Logger, LoggerFactory}
@@ -183,6 +184,10 @@ object TextractClient {
 
   final case class ExtractedTable(
     cells: ArraySeq[ArraySeq[String]],
+  )
+
+  final case class ExtractedKeyValueSet(
+    pairs: ArraySeq[String -> String],
   )
 
 }

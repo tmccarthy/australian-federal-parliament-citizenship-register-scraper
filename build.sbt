@@ -30,8 +30,8 @@ lazy val core = project
     libraryDependencies += "com.softwaremill.sttp.client3"   %% "core"                           % "3.0.0-RC7",
     libraryDependencies += "com.softwaremill.sttp.client3"   %% "async-http-client-backend-cats" % "3.0.0-RC7",
     libraryDependencies += "org.jsoup"                        % "jsoup"                          % "1.13.1",
-    libraryDependencies += "software.amazon.awssdk"           % "textract"                       % "2.15.19",
-    libraryDependencies += "software.amazon.awssdk"           % "s3"                             % "2.15.19",
+    libraryDependencies += "software.amazon.awssdk"           % "textract"                       % "2.15.33",
+    libraryDependencies += "software.amazon.awssdk"           % "s3"                             % "2.15.33",
     libraryDependencies += "org.slf4j"                        % "slf4j-api"                      % "1.7.30",
     libraryDependencies += "org.slf4j"                        % "slf4j-simple"                   % "1.7.30" % Runtime,
   )
