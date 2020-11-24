@@ -2,8 +2,11 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model
 
 import scala.collection.immutable.ArraySeq
 
-sealed trait Block {
+sealed trait HasBlockId {
   val id: BlockId
+}
+
+sealed trait Block extends HasBlockId {
   val pageNumber: PageNumber
   val geometry: Geometry
 }
@@ -91,10 +94,11 @@ object Word {
   }
 }
 
-final case class KeyValueSet(
+final case class KeyValueSet (
+  id: BlockId,
   key: KeyValueSet.Key,
   value: KeyValueSet.Value,
-)
+) extends HasBlockId
 
 object KeyValueSet {
   final case class Key(

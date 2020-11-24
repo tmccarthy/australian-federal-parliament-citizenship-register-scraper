@@ -1,17 +1,13 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.Geometry.BoundingBox
-import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
-import au.id.tmm.utilities.errors.syntax._
-import au.id.tmm.utilities.syntax.tuples.->
-import software.amazon.awssdk.services.textract.{model => sdk}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
-
-import scala.collection.mutable
-import scala.jdk.CollectionConverters._
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.syntax.traverse.toTraverseOps
+import software.amazon.awssdk.services.textract.{model => sdk}
 
 import scala.collection.immutable.{ArraySeq, SortedSet}
+import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag
 
 // TODO rename
@@ -36,7 +32,7 @@ object Parse {
     } yield AnalysisResult(SortedSet.from(pages), AnalysisResult.DocumentMetadata(apiResponse.documentMetadata.pages))
   }
 
-  private def extract[B <: Block : ClassTag](
+  private def extract[B <: HasBlockId : ClassTag](
     blocks: ArraySeq[sdk.Block],
     blockType: sdk.BlockType,
     make: sdk.Block => ExceptionOr[B],
@@ -48,7 +44,7 @@ object Parse {
         case _ => Right(ArraySeq.empty)
       }
 
-  private def makeLookup[B <: Block : ClassTag](
+  private def makeLookup[B <: HasBlockId : ClassTag](
     blocks: ArraySeq[sdk.Block],
     blockType: sdk.BlockType,
     make: sdk.Block => ExceptionOr[B],
@@ -56,7 +52,7 @@ object Parse {
     extract[B](blocks, blockType, make)
       .map(lookupById[B])
 
-  private def lookupById[B <: Block](bs: ArraySeq[B]): Map[BlockId, B] =
+  private def lookupById[B <: HasBlockId](bs: ArraySeq[B]): Map[BlockId, B] =
     bs.map(b => b.id -> b).toMap
 
   private def parseCell(
@@ -156,7 +152,7 @@ object Parse {
       Left(GenericException(s"Expected $expectedType, but was ${block.blockType}"))
     }
 
-  private def lookupOrFail[B <: Block](
+  private def lookupOrFail[B <: HasBlockId](
     lookup: Map[BlockId, B],
     relationships: java.util.List[sdk.Relationship],
     relationshipType: sdk.RelationshipType,
