@@ -1,16 +1,7 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model
 
-import scala.collection.immutable.SortedSet
+import scala.collection.immutable.ArraySeq
 
 final case class AnalysisResult(
-  pages: SortedSet[Page],
-  documentMetadata: AnalysisResult.DocumentMetadata,
+  pages: ArraySeq[Page],
 )
-
-object AnalysisResult {
-
-  final case class DocumentMetadata(
-    numPages: Int,
-  )
-
-}

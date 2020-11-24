@@ -16,8 +16,17 @@ final case class Line(
   pageNumber: PageNumber,
   geometry: Geometry,
   text: String,
-  words: ArraySeq[Word],
+  children: ArraySeq[Line.Child],
 ) extends Block
+
+object Line {
+  sealed trait Child
+
+  object Child {
+    case class OfWord(word: Word) extends Child
+    case class OfSelectionElement(selectionElement: SelectionElement) extends Child
+  }
+}
 
 final case class Page(
   id: BlockId,
@@ -59,7 +68,14 @@ final case class Table(
   pageNumber: PageNumber,
   geometry: Geometry,
   children: ArraySeq[Table.Cell],
-) extends Block
+) extends Block {
+  def rows: ArraySeq[ArraySeq[Table.Cell]] =
+    children
+      .sortBy(c => (c.rowIndex, c.columnIndex))
+      .groupBy(c => c.rowIndex)
+      .to(ArraySeq)
+      .sortBy(_._1).map(_._2)
+}
 
 object Table {
 
