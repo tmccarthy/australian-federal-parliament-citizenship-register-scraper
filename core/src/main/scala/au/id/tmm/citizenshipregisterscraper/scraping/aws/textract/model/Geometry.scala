@@ -18,7 +18,7 @@ object Geometry {
       Left(GenericException(s"Expected positive but was $double"))
     }
 
-  final case class BoundingBox private(
+  final case class BoundingBox private (
     left: Float,
     top: Float,
     height: Float,
@@ -33,10 +33,10 @@ object Geometry {
       width: Float,
     ): ExceptionOr[BoundingBox] =
       for {
-        left <- requireNonNegative(left)
-        top <- requireNonNegative(top)
+        left   <- requireNonNegative(left)
+        top    <- requireNonNegative(top)
         height <- requireNonNegative(height)
-        width <- requireNonNegative(width)
+        width  <- requireNonNegative(width)
       } yield new BoundingBox(left, top, height, width)
   }
 
@@ -46,7 +46,7 @@ object Geometry {
 
   object Polygon {
 
-    final case class Point private(x: Float, y: Float)
+    final case class Point private (x: Float, y: Float)
 
     object Point {
       def apply(

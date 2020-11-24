@@ -16,16 +16,21 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
 
   private def disclosureForName(name: String): IO[senate.DocumentReference] =
     for {
-      page <- IO(new URI("https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Senators_Interests/RegisterQual46thparl"))
+      page <- IO(
+        new URI(
+          "https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Senators_Interests/RegisterQual46thparl",
+        ),
+      )
       list <- senate.ListDocuments.from(page)
-      documentRef <- IO.fromOption(list.find(d => d.senatorName.contains(name)))(GenericException(s"No disclosure for $name"))
+      documentRef <-
+        IO.fromOption(list.find(d => d.senatorName.contains(name)))(GenericException(s"No disclosure for $name"))
     } yield documentRef
 
   private val abetzDisclosure: IO[senate.DocumentReference] = disclosureForName("Abetz")
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      reference <- abetzDisclosure
+      reference  <- abetzDisclosure
       httpClient <- AsyncHttpClientCatsBackend[IO]()
       s3WorkingEnvironment = new S3WorkingEnvironment(
         bucket = S3WorkingEnvironment.S3BucketName("au.id.tmm.temp"),

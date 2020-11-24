@@ -12,7 +12,12 @@ import cats.syntax.traverse._
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.s3.model.{HeadObjectRequest, HeadObjectResponse, NoSuchKeyException, PutObjectRequest}
+import software.amazon.awssdk.services.s3.model.{
+  HeadObjectRequest,
+  HeadObjectResponse,
+  NoSuchKeyException,
+  PutObjectRequest,
+}
 import sttp.client3.{Response, SttpBackend, _}
 import sttp.model.{HeaderNames, Uri => SttpUri}
 

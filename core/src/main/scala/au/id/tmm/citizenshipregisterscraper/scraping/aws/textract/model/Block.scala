@@ -30,8 +30,8 @@ object Page {
   sealed trait Child
 
   object Child {
-    final case class OfLine(line: Line) extends Child
-    final case class OfTable(table: Table) extends Child
+    final case class OfLine(line: Line)                      extends Child
+    final case class OfTable(table: Table)                   extends Child
     final case class OfKeyValueSet(keyValueSet: KeyValueSet) extends Child
   }
 
@@ -49,7 +49,7 @@ object SelectionElement {
   sealed abstract class Status(val isSelected: Boolean)
 
   object Status {
-    case object Selected extends Status(isSelected = true)
+    case object Selected    extends Status(isSelected = true)
     case object NotSelected extends Status(isSelected = false)
   }
 }
@@ -89,12 +89,12 @@ object Word {
   sealed trait TextType
 
   object TextType {
-    case object Printed extends TextType
+    case object Printed     extends TextType
     case object Handwriting extends TextType
   }
 }
 
-final case class KeyValueSet (
+final case class KeyValueSet(
   id: BlockId,
   key: KeyValueSet.Key,
   value: KeyValueSet.Value,

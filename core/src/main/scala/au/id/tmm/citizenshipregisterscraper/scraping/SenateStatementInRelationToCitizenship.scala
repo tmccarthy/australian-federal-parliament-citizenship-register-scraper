@@ -3,7 +3,10 @@ package au.id.tmm.citizenshipregisterscraper.scraping
 import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
+  AncestorDetails,
+  GrandparentDetails,
+}
 
 final case class SenateStatementInRelationToCitizenship(
   surname: String,

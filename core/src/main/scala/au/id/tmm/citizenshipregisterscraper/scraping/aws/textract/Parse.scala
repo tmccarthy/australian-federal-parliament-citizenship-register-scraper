@@ -13,24 +13,24 @@ import scala.reflect.ClassTag
 // TODO rename
 object Parse {
 
-  def toModel(apiResponse: sdk.GetDocumentAnalysisResponse): ExceptionOr[AnalysisResult] = {
-
+  def toModel(apiResponse: sdk.GetDocumentAnalysisResponse): ExceptionOr[AnalysisResult] =
     for {
       allBlocks <- requireNonNull(apiResponse.blocks).map(_.asScala.to(ArraySeq))
       wordsById <- makeLookup[Word](allBlocks, sdk.BlockType.WORD, parseWord)
 
-      selectionElementsById <- makeLookup[SelectionElement](allBlocks, sdk.BlockType.SELECTION_ELEMENT, parseSelectionElement)
+      selectionElementsById <-
+        makeLookup[SelectionElement](allBlocks, sdk.BlockType.SELECTION_ELEMENT, parseSelectionElement)
 
       linesById <- makeLookup[Line](allBlocks, sdk.BlockType.LINE, parseLine(wordsById, _))
 
-      cellById <- makeLookup[Table.Cell](allBlocks, sdk.BlockType.CELL, parseCell(wordsById, _))
+      cellById   <- makeLookup[Table.Cell](allBlocks, sdk.BlockType.CELL, parseCell(wordsById, _))
       tablesById <- makeLookup[Table](allBlocks, sdk.BlockType.TABLE, parseTable(cellById, _))
 
-      keyValueSetsById <- makeLookup[KeyValueSet](allBlocks, sdk.BlockType.KEY_VALUE_SET, parseKeyValueSet(wordsById, _))
+      keyValueSetsById <-
+        makeLookup[KeyValueSet](allBlocks, sdk.BlockType.KEY_VALUE_SET, parseKeyValueSet(wordsById, _))
 
       pages <- extract[Page](allBlocks, sdk.BlockType.PAGE, parsePage(linesById, tablesById, keyValueSetsById, _))
     } yield AnalysisResult(SortedSet.from(pages), AnalysisResult.DocumentMetadata(apiResponse.documentMetadata.pages))
-  }
 
   private def extract[B <: HasBlockId : ClassTag](
     blocks: ArraySeq[sdk.Block],
@@ -80,14 +80,14 @@ object Parse {
   private def parseLine(
     wordLookup: Map[BlockId, Word],
     block: sdk.Block,
-  ): ExceptionOr[Line] = {
+  ): ExceptionOr[Line] =
     for {
-      _ <- requireBlockType(block, sdk.BlockType.WORD)
-      id <- BlockId.fromString(block.id)
+      _          <- requireBlockType(block, sdk.BlockType.WORD)
+      id         <- BlockId.fromString(block.id)
       pageNumber <- PageNumber(block.page)
-      geometry <- parseGeometry(block.geometry)
-      text <- requireNonNull(block.text)
-      words <- lookupOrFail(wordLookup, block.relationships, sdk.RelationshipType.CHILD)
+      geometry   <- parseGeometry(block.geometry)
+      text       <- requireNonNull(block.text)
+      words      <- lookupOrFail(wordLookup, block.relationships, sdk.RelationshipType.CHILD)
     } yield Line(
       id,
       pageNumber,
@@ -95,32 +95,31 @@ object Parse {
       text,
       words,
     )
-  }
 
   private def parseSelectionElement(block: sdk.Block): ExceptionOr[SelectionElement] =
     for {
-      _ <- requireBlockType(block, sdk.BlockType.SELECTION_ELEMENT)
-      id <- BlockId.fromString(block.id)
+      _          <- requireBlockType(block, sdk.BlockType.SELECTION_ELEMENT)
+      id         <- BlockId.fromString(block.id)
       pageNumber <- PageNumber(block.page)
-      geometry <- parseGeometry(block.geometry)
+      geometry   <- parseGeometry(block.geometry)
       status <- block.selectionStatus match {
-        case sdk.SelectionStatus.SELECTED => Right(SelectionElement.Status.Selected)
-        case sdk.SelectionStatus.NOT_SELECTED => Right(SelectionElement.Status.NotSelected)
+        case sdk.SelectionStatus.SELECTED               => Right(SelectionElement.Status.Selected)
+        case sdk.SelectionStatus.NOT_SELECTED           => Right(SelectionElement.Status.NotSelected)
         case sdk.SelectionStatus.UNKNOWN_TO_SDK_VERSION => Left(GenericException("Unknown selection status"))
       }
     } yield SelectionElement(id, pageNumber, geometry, status)
 
   private def parseWord(block: sdk.Block): ExceptionOr[Word] =
     for {
-      _ <- requireBlockType(block, sdk.BlockType.WORD)
-      id <- BlockId.fromString(block.id)
+      _          <- requireBlockType(block, sdk.BlockType.WORD)
+      id         <- BlockId.fromString(block.id)
       pageNumber <- PageNumber(block.page)
-      geometry <- parseGeometry(block.geometry)
-      text <- requireNonNull(block.text)
+      geometry   <- parseGeometry(block.geometry)
+      text       <- requireNonNull(block.text)
       confidence <- Confidence(block.confidence)
       textType <- block.textType match {
-        case sdk.TextType.HANDWRITING => Right(Word.TextType.Handwriting)
-        case sdk.TextType.PRINTED => Right(Word.TextType.Printed)
+        case sdk.TextType.HANDWRITING            => Right(Word.TextType.Handwriting)
+        case sdk.TextType.PRINTED                => Right(Word.TextType.Printed)
         case sdk.TextType.UNKNOWN_TO_SDK_VERSION => Left(GenericException("Unknown text type"))
       }
     } yield Word(id, pageNumber, geometry, text, confidence, textType)
@@ -135,7 +134,7 @@ object Parse {
         sdkBoundingBox.width,
       )
       sdkPoints <- requireNonNull(sdkGeometry.polygon()).map(_.asScala.to(ArraySeq))
-      points <- sdkPoints.traverse(p => Geometry.Polygon.Point(p.x, p.y))
+      points    <- sdkPoints.traverse(p => Geometry.Polygon.Point(p.x, p.y))
     } yield Geometry(boundingBox, Geometry.Polygon(points))
 
   private def requireNonNull[A](a: A): ExceptionOr[A] =
@@ -158,12 +157,14 @@ object Parse {
     relationshipType: sdk.RelationshipType,
   ): ExceptionOr[ArraySeq[B]] =
     for {
-      idsAsStrings <- relationships.asScala
-        .to(ArraySeq)
-        .flatTraverse[ExceptionOr, String] {
-          case r if r.`type` == relationshipType => Right(r.ids.asScala.to(ArraySeq))
-          case unexpectedRelationship => Left(GenericException(s"Unexpected relationship type ${unexpectedRelationship.`type`}"))
-        }
+      idsAsStrings <-
+        relationships.asScala
+          .to(ArraySeq)
+          .flatTraverse[ExceptionOr, String] {
+            case r if r.`type` == relationshipType => Right(r.ids.asScala.to(ArraySeq))
+            case unexpectedRelationship =>
+              Left(GenericException(s"Unexpected relationship type ${unexpectedRelationship.`type`}"))
+          }
 
       ids <- idsAsStrings.traverse(BlockId.fromString)
 
