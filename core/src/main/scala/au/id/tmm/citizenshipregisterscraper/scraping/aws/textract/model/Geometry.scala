@@ -1,5 +1,7 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model
 
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
+
 import scala.collection.immutable.ArraySeq
 
 final case class Geometry(
@@ -8,18 +10,55 @@ final case class Geometry(
 )
 
 object Geometry {
-  final case class BoundingBox(
-    left: Double,
-    top: Double,
-    height: Double,
-    width: Double,
+
+  private def requireNonNegative(double: Float): ExceptionOr[Float] =
+    if (double >= 0) {
+      Right(double)
+    } else {
+      Left(GenericException(s"Expected positive but was $double"))
+    }
+
+  final case class BoundingBox private(
+    left: Float,
+    top: Float,
+    height: Float,
+    width: Float,
   )
+
+  object BoundingBox {
+    def apply(
+      left: Float,
+      top: Float,
+      height: Float,
+      width: Float,
+    ): ExceptionOr[BoundingBox] =
+      for {
+        left <- requireNonNegative(left)
+        top <- requireNonNegative(top)
+        height <- requireNonNegative(height)
+        width <- requireNonNegative(width)
+      } yield new BoundingBox(left, top, height, width)
+  }
 
   final case class Polygon(
     points: ArraySeq[Polygon.Point],
   ) extends AnyVal
 
   object Polygon {
-    final case class Point(x: Double, y: Double)
+
+    final case class Point private(x: Float, y: Float)
+
+    object Point {
+      def apply(
+        x: Float,
+        y: Float,
+      ): ExceptionOr[Point] =
+        for {
+          x <- requireNonNegative(x)
+          y <- requireNonNegative(y)
+        } yield new Point(x, y)
+    }
+
   }
+
 }
