@@ -5,6 +5,7 @@ import java.time.Duration
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.RetryEffect
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.Client.{JobId, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing.Parse
 import au.id.tmm.collections.NonEmptyArraySeq
 import au.id.tmm.utilities.errors.GenericException
 import cats.effect.{IO, Timer}
