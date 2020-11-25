@@ -35,7 +35,7 @@ class TextractClient(
         output = OutputConfig
           .builder()
           .s3Bucket(bucket.asString)
-          .s3Prefix(s3WorkingEnvironment.namePrefix.resolve(S3WorkingEnvironment.S3Key("textract_output")).toRaw)
+          .s3Prefix(S3WorkingEnvironment.S3Key("textract_output").resolve(s3WorkingEnvironment.namePrefix).toRaw)
           .build(),
       )
 

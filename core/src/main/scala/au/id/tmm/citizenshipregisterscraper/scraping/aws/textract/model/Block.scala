@@ -112,10 +112,9 @@ object Word {
 }
 
 final case class KeyValueSet(
-  id: BlockId,
   key: KeyValueSet.Key,
   value: KeyValueSet.Value,
-) extends HasBlockId
+)
 
 object KeyValueSet {
   final case class Key(
