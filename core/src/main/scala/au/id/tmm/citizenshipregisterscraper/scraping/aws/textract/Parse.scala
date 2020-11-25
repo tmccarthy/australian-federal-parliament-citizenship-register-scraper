@@ -17,9 +17,13 @@ import cats.syntax.monadError._
 // TODO rename
 object Parse {
 
-  def toModel(apiResponse: sdk.GetDocumentAnalysisResponse): ExceptionOr[AnalysisResult] =
+  def toModel(apiResponses: ArraySeq[sdk.GetDocumentAnalysisResponse]): ExceptionOr[AnalysisResult] =
     for {
-      allBlocks <- requireNonNull(apiResponse.blocks).map(_.asScala.to(ArraySeq))
+      allBlocks <-
+        apiResponses
+          .flatTraverse[ExceptionOr, sdk.Block] { r =>
+            requireNonNull(r.blocks).map(_.asScala.to(ArraySeq))
+          }
 
       pages <- extractPages(allBlocks).adaptError(clarifyBadBlock(allBlocks))
     } yield AnalysisResult(pages)
@@ -158,10 +162,10 @@ object Parse {
       geometry   <- parseGeometry(block.geometry)
       text       <- requireNonNull(block.text)
       childLookup: Map[BlockId, Line.Child] = (
-        (wordLookup.view.mapValues(Line.Child.OfWord): MapView[BlockId, Line.Child]) ++
-          (selectionElementLookup.view.mapValues(Line.Child.OfSelectionElement): MapView[BlockId, Line.Child])
+          (wordLookup.view.mapValues(Line.Child.OfWord): MapView[BlockId, Line.Child]) ++
+            (selectionElementLookup.view.mapValues(Line.Child.OfSelectionElement): MapView[BlockId, Line.Child])
       ).toMap
-      children   <- lookupOrFail(childLookup, block.relationships, sdk.RelationshipType.CHILD)
+      children <- lookupOrFail(childLookup, block.relationships, sdk.RelationshipType.CHILD)
     } yield Line(
       id,
       pageNumber,

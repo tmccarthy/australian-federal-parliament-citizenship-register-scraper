@@ -23,7 +23,7 @@ object Line {
   sealed trait Child
 
   object Child {
-    case class OfWord(word: Word) extends Child
+    case class OfWord(word: Word)                                     extends Child
     case class OfSelectionElement(selectionElement: SelectionElement) extends Child
   }
 }
@@ -74,7 +74,8 @@ final case class Table(
       .sortBy(c => (c.rowIndex, c.columnIndex))
       .groupBy(c => c.rowIndex)
       .to(ArraySeq)
-      .sortBy(_._1).map(_._2)
+      .sortBy(_._1)
+      .map(_._2)
 }
 
 object Table {

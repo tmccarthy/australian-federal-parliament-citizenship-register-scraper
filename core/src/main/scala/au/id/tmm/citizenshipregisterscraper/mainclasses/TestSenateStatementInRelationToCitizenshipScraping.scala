@@ -30,6 +30,7 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
+      // TODO something here isn't getting released at the end
       reference  <- abetzDisclosure
       httpClient <- AsyncHttpClientCatsBackend[IO]()
       s3WorkingEnvironment = new S3WorkingEnvironment(
