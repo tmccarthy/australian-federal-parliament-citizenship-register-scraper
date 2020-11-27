@@ -15,10 +15,30 @@ object KeyValueSets {
   import Common._
   import Relationships._
 
+  final class Lookup private[KeyValueSets] (allKeyValueSets: ArraySeq[KeyValueSet]) {
+    private val keyLookup: Map[BlockId, KeyValueSet] =
+      allKeyValueSets.groupBy(_.key.id).view.mapValues(_.head).toMap
+
+    private val valueLookup: Map[BlockId, KeyValueSet] =
+      allKeyValueSets.groupBy(_.value.id).view.mapValues(_.head).toMap
+
+    def keyValueSetChildrenOf(block: sdk.Block): ExceptionOr[ArraySeq[KeyValueSet]] =
+      for {
+        keySetsFromKeyChildren   <- lookupOrIgnore(keyLookup, block, sdk.RelationshipType.CHILD)
+        keySetsFromValueChildren <- lookupOrIgnore(valueLookup, block, sdk.RelationshipType.CHILD)
+        keySets <-
+          if (keySetsFromKeyChildren.diff(keySetsFromValueChildren).isEmpty) {
+            Right(keySetsFromKeyChildren)
+          } else {
+            Left(GenericException(s"Didn't find both key and value"))
+          }
+      } yield keySets
+  }
+
   def extractKeyValueSets(
     wordLookup: Map[BlockId, Word],
     allBlocks: ArraySeq[sdk.Block],
-  ): ExceptionOr[ArraySeq[KeyValueSet]] =
+  ): ExceptionOr[Lookup] =
     for {
       kvSetBlocks <- Right(allBlocks.filter(_.blockType == sdk.BlockType.KEY_VALUE_SET))
       kvSetBlocksById <-
@@ -40,7 +60,7 @@ object KeyValueSets {
             } yield maybeKeyValueSet
           }
 
-    } yield keyValueSets
+    } yield new Lookup(keyValueSets)
 
   private def parseKeyValueSet(
     wordLookup: Map[BlockId, Word],
@@ -62,7 +82,7 @@ object KeyValueSets {
       id         <- BlockId.fromString(keyBlock.id)
       pageNumber <- PageNumber(keyBlock.page)
       geometry   <- parseGeometry(keyBlock.geometry)
-      words      <- lookupOrFail(wordLookup, keyBlock, sdk.RelationshipType.CHILD)
+      words      <- lookupOrIgnore(wordLookup, keyBlock, sdk.RelationshipType.CHILD)
     } yield KeyValueSet.Key(
       id,
       pageNumber,

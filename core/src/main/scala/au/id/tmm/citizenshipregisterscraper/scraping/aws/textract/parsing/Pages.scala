@@ -14,7 +14,7 @@ private[parsing] object Pages {
   def parsePage(
     lineLookup: Map[BlockId, Line],
     tableLookup: Map[BlockId, Table],
-    keyValueSetLookup: Map[BlockId, KeyValueSet],
+    keyValueSetLookup: KeyValueSets.Lookup,
     block: sdk.Block,
   ): ExceptionOr[Page] =
     for {
@@ -28,13 +28,13 @@ private[parsing] object Pages {
             (tableLookup.view.mapValues(Page.Child.OfTable): MapView[BlockId, Page.Child])
       ).toMap
 
-      // TODO support key value sets
-      children <- lookupOrIgnore(childLookup, block.relationships, sdk.RelationshipType.CHILD)
+      lineAndTableChildren <- lookupOrIgnore(childLookup, block, sdk.RelationshipType.CHILD)
+      keyValueSetChildren  <- keyValueSetLookup.keyValueSetChildrenOf(block)
     } yield Page(
       id,
       pageNumber,
       geometry,
-      children,
+      lineAndTableChildren ++ keyValueSetChildren.map(Page.Child.OfKeyValueSet),
     )
 
 }

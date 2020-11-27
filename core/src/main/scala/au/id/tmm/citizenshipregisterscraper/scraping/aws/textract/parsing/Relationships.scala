@@ -14,11 +14,12 @@ private[parsing] object Relationships {
 
   def lookupOrIgnore[B](
     lookup: Map[BlockId, B],
-    relationships: java.util.List[sdk.Relationship],
+    sdkBlock: sdk.Block,
     relationshipType: sdk.RelationshipType,
   ): ExceptionOr[ArraySeq[B]] =
     for {
-      ids <- idsFrom(relationships, relationshipType)
+      relationships <- requireNonNull(sdkBlock.relationships)
+      ids           <- idsFrom(relationships, relationshipType)
 
       blocks = ids.flatMap(lookup.get)
     } yield blocks
@@ -41,14 +42,14 @@ private[parsing] object Relationships {
     relationshipType: sdk.RelationshipType,
   ): ExceptionOr[ArraySeq[BlockId]] =
     for {
-      idsAsStrings <-
+      idsAsStrings <- Right {
         relationships.asScala
           .to(ArraySeq)
-          .flatTraverse[ExceptionOr, String] {
-            case r if r.`type` == relationshipType => Right(r.ids.asScala.to(ArraySeq))
-            case unexpectedRelationship =>
-              Left(GenericException(s"Unexpected relationship type ${unexpectedRelationship.`type`}"))
+          .flatMap {
+            case r if r.`type` == relationshipType => r.ids.asScala.to[ArraySeq[String]](ArraySeq)
+            case _ => ArraySeq.empty[String]
           }
+      }
 
       ids <- idsAsStrings.traverse(BlockId.fromString)
     } yield ids

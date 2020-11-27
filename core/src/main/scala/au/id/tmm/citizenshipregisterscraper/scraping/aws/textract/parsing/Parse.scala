@@ -42,9 +42,10 @@ object Parse {
       cellById   <- makeLookup[Table.Cell](allBlocks, sdk.BlockType.CELL, Tables.parseCell(wordsById, _))
       tablesById <- makeLookup[Table](allBlocks, sdk.BlockType.TABLE, Tables.parseTable(cellById, _))
 
-      keyValueSetsById: Map[BlockId, KeyValueSet] = Map.empty // TODO parse these
+      keyValueSetsLookup <- KeyValueSets.extractKeyValueSets(wordsById, allBlocks)
 
-      pages <- extract[Page](allBlocks, sdk.BlockType.PAGE, Pages.parsePage(linesById, tablesById, keyValueSetsById, _))
+      pages <-
+        extract[Page](allBlocks, sdk.BlockType.PAGE, Pages.parsePage(linesById, tablesById, keyValueSetsLookup, _))
     } yield pages
 
   private def extract[B <: HasBlockId : ClassTag](
