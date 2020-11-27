@@ -23,10 +23,10 @@ private[parsing] object Lines {
       geometry   <- parseGeometry(block.geometry)
       text       <- requireNonNull(block.text)
       childLookup: Map[BlockId, Line.Child] = (
-        (wordLookup.view.mapValues(Line.Child.OfWord): MapView[BlockId, Line.Child]) ++
-          (selectionElementLookup.view.mapValues(Line.Child.OfSelectionElement): MapView[BlockId, Line.Child])
-        ).toMap
-      children <- lookupOrFail(childLookup, block.relationships, sdk.RelationshipType.CHILD)
+          (wordLookup.view.mapValues(Line.Child.OfWord): MapView[BlockId, Line.Child]) ++
+            (selectionElementLookup.view.mapValues(Line.Child.OfSelectionElement): MapView[BlockId, Line.Child])
+      ).toMap
+      children <- lookupOrFail(childLookup, block, sdk.RelationshipType.CHILD)
     } yield Line(
       id,
       pageNumber,

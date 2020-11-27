@@ -10,6 +10,8 @@ import scala.jdk.CollectionConverters._
 
 private[parsing] object Relationships {
 
+  import Common._
+
   def lookupOrIgnore[B](
     lookup: Map[BlockId, B],
     relationships: java.util.List[sdk.Relationship],
@@ -23,12 +25,12 @@ private[parsing] object Relationships {
 
   def lookupOrFail[B](
     lookup: Map[BlockId, B],
-    relationships: java.util.List[sdk.Relationship],
+    parentBlock: sdk.Block,
     relationshipType: sdk.RelationshipType,
   ): ExceptionOr[ArraySeq[B]] =
     for {
-      ids <- idsFrom(relationships, relationshipType)
-
+      relationships <- requireNonNull(parentBlock.relationships)
+      ids           <- idsFrom(relationships, relationshipType)
       blocks <- ids.traverse { blockId =>
         lookup.get(blockId).toRight(PartialBlockNotFoundException(blockId))
       }
@@ -71,7 +73,7 @@ private[parsing] object Relationships {
           },
         )
       case e @ GenericException(_, Some(cause: Exception)) =>
-          e.copy(cause = Some(enrichBadBlockException(allBlocks, cause)))
+        e.copy(cause = Some(enrichBadBlockException(allBlocks, cause)))
       case e => e
     }
 

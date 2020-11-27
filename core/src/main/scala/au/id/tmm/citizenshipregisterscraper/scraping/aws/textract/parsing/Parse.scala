@@ -31,8 +31,11 @@ object Parse {
     for {
       wordsById <- makeLookup[Word](allBlocks, sdk.BlockType.WORD, Words.parseWord)
 
-      selectionElementsById <-
-        makeLookup[SelectionElement](allBlocks, sdk.BlockType.SELECTION_ELEMENT, SelectionElements.parseSelectionElement)
+      selectionElementsById <- makeLookup[SelectionElement](
+        allBlocks,
+        sdk.BlockType.SELECTION_ELEMENT,
+        SelectionElements.parseSelectionElement,
+      )
 
       linesById <- makeLookup[Line](allBlocks, sdk.BlockType.LINE, Lines.parseLine(wordsById, selectionElementsById, _))
 

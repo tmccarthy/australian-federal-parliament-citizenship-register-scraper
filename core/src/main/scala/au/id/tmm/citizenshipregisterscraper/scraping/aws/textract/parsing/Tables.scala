@@ -22,7 +22,7 @@ private[parsing] object Tables {
       columnSpan  <- requireNonNull(block.columnSpan)
       rowIndex    <- requireNonNull(block.rowIndex)
       rowSpan     <- requireNonNull(block.rowSpan)
-      words       <- lookupOrFail(wordLookup, block.relationships, sdk.RelationshipType.CHILD)
+      words       <- lookupOrFail(wordLookup, block, sdk.RelationshipType.CHILD)
     } yield Table.Cell(
       id,
       pageNumber,
@@ -43,7 +43,7 @@ private[parsing] object Tables {
       id         <- BlockId.fromString(block.id)
       pageNumber <- PageNumber(block.page)
       geometry   <- parseGeometry(block.geometry)
-      cells      <- lookupOrFail(cellLookup, block.relationships, sdk.RelationshipType.CHILD)
+      cells      <- lookupOrFail(cellLookup, block, sdk.RelationshipType.CHILD)
     } yield Table(
       id,
       pageNumber,
