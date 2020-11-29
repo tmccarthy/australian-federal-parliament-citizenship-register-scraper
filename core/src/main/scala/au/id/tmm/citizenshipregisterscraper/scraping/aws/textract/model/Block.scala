@@ -1,9 +1,21 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model
 
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.SelectionElement.Status
+
 import scala.collection.immutable.ArraySeq
 
 sealed trait HasBlockId {
   val id: BlockId
+}
+
+sealed trait ReadableText {
+  def readableText: String
+
+  override def toString: String = readableText
+}
+
+object ReadableText {
+  def from(others: ArraySeq[ReadableText]): String = others.map(_.readableText).mkString(" ")
 }
 
 sealed trait Block extends HasBlockId {
@@ -11,13 +23,17 @@ sealed trait Block extends HasBlockId {
   val geometry: Geometry
 }
 
+sealed trait AtomicBlock extends Block with ReadableText
+
 final case class Line(
   id: BlockId,
   pageNumber: PageNumber,
   geometry: Geometry,
   text: String,
-  children: ArraySeq[AtomBlock],
-) extends Block
+  children: ArraySeq[AtomicBlock],
+) extends Block with ReadableText {
+  override def readableText: String = text
+}
 
 final case class Page(
   id: BlockId,
@@ -43,7 +59,12 @@ final case class SelectionElement(
   pageNumber: PageNumber,
   geometry: Geometry,
   status: SelectionElement.Status,
-) extends Block
+) extends AtomicBlock {
+  override def readableText: String = status match {
+    case Status.Selected => "☑"
+    case Status.NotSelected => "☐"
+  }
+}
 
 object SelectionElement {
   sealed abstract class Status(val isSelected: Boolean)
@@ -79,8 +100,10 @@ object Table {
     columnSpan: Int,
     rowIndex: Int,
     rowSpan: Int,
-    children: ArraySeq[AtomBlock],
-  ) extends Block
+    children: ArraySeq[AtomicBlock],
+  ) extends Block with ReadableText {
+    override def readableText: String = ReadableText.from(children)
+  }
 
 }
 
@@ -91,7 +114,9 @@ final case class Word(
   text: String,
   confidence: Confidence,
   textType: Word.TextType,
-) extends Block
+) extends AtomicBlock {
+  override def readableText: String = text
+}
 
 object Word {
   sealed trait TextType
@@ -112,20 +137,17 @@ object KeyValueSet {
     id: BlockId,
     pageNumber: PageNumber,
     geometry: Geometry,
-    children: ArraySeq[AtomBlock],
-  ) extends Block
+    children: ArraySeq[AtomicBlock],
+  ) extends Block with ReadableText {
+    override def readableText: String = ReadableText.from(children)
+  }
 
   final case class Value(
     id: BlockId,
     pageNumber: PageNumber,
     geometry: Geometry,
-    children: ArraySeq[AtomBlock],
-  ) extends Block
-}
-
-sealed trait AtomBlock // TODO this is not a good name
-
-object AtomBlock {
-  final case class OfWord(word: Word)                                     extends AtomBlock
-  final case class OfSelectionElement(selectionElement: SelectionElement) extends AtomBlock
+    children: ArraySeq[AtomicBlock],
+  ) extends Block with ReadableText {
+    override def readableText: String = ReadableText.from(children)
+  }
 }

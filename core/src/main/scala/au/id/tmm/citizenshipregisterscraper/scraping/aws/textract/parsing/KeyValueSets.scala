@@ -1,6 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomBlock, BlockId, KeyValueSet, PageNumber}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomicBlock, BlockId, KeyValueSet, PageNumber}
 import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.syntax.apply._
@@ -36,7 +36,7 @@ object KeyValueSets {
   }
 
   def extractKeyValueSets(
-    atomBlockLookup: Map[BlockId, AtomBlock],
+    atomBlockLookup: Map[BlockId, AtomicBlock],
     allBlocks: ArraySeq[sdk.Block],
   ): ExceptionOr[Lookup] =
     for {
@@ -63,7 +63,7 @@ object KeyValueSets {
     } yield new Lookup(keyValueSets)
 
   private def parseKeyValueSet(
-    atomBlockLookup: Map[BlockId, AtomBlock],
+    atomBlockLookup: Map[BlockId, AtomicBlock],
     kvSetBlocksLookup: Map[BlockId, sdk.Block],
     keyBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet] =
@@ -75,7 +75,7 @@ object KeyValueSets {
     } yield KeyValueSet(key, value)
 
   private def parseKey(
-    atomBlockLookup: Map[BlockId, AtomBlock],
+    atomBlockLookup: Map[BlockId, AtomicBlock],
     keyBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet.Key] =
     for {
@@ -91,7 +91,7 @@ object KeyValueSets {
     )
 
   private def parseValue(
-    atomBlockLookup: Map[BlockId, AtomBlock],
+    atomBlockLookup: Map[BlockId, AtomicBlock],
     valueSdkBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet.Value] =
     for {

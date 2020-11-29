@@ -1,6 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomBlock, BlockId, PageNumber, Table}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomicBlock, BlockId, PageNumber, Table}
 import au.id.tmm.utilities.errors.ExceptionOr
 import software.amazon.awssdk.services.textract.{model => sdk}
 
@@ -10,7 +10,7 @@ private[parsing] object Tables {
   import Relationships._
 
   def parseCell(
-    atomBlockLookup: Map[BlockId, AtomBlock],
+    atomBlockLookup: Map[BlockId, AtomicBlock],
     block: sdk.Block,
   ): ExceptionOr[Table.Cell] =
     for {

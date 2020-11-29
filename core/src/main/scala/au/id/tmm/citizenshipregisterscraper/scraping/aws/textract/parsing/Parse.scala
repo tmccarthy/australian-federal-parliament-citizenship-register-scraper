@@ -4,6 +4,7 @@ import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.utilities.errors.ExceptionOr
 import au.id.tmm.utilities.errors.syntax._
 import cats.syntax.traverse.toTraverseOps
+import cats.syntax.functor.toFunctorOps
 import cats.syntax.traverseFilter.toTraverseFilterOps
 import software.amazon.awssdk.services.textract.{model => sdk}
 
@@ -40,10 +41,7 @@ object Parse {
           sdk.BlockType.SELECTION_ELEMENT,
           SelectionElements.parseSelectionElement,
         )
-      } yield (
-        wordsById.view.mapValues(AtomBlock.OfWord) ++
-          selectionElementsById.view.mapValues(AtomBlock.OfSelectionElement)
-      ).toMap
+      } yield wordsById.widen[AtomicBlock] ++ selectionElementsById.widen[AtomicBlock]
 
       linesById <- makeLookup[Line](allBlocks, sdk.BlockType.LINE, Lines.parseLine(atomBlockById, _))
 

@@ -10,7 +10,7 @@ private[parsing] object Lines {
   import Relationships._
 
   def parseLine(
-    atomBlocksLookup: Map[BlockId, AtomBlock],
+    atomBlocksLookup: Map[BlockId, AtomicBlock],
     block: sdk.Block,
   ): ExceptionOr[Line] =
     for {
