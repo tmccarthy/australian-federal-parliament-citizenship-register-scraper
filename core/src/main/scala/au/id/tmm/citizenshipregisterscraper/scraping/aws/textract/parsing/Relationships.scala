@@ -33,7 +33,7 @@ private[parsing] object Relationships {
       relationships <- requireNonNull(parentBlock.relationships)
       ids           <- idsFrom(relationships, relationshipType)
       blocks <- ids.traverse { blockId =>
-        lookup.get(blockId).toRight(PartialBlockNotFoundException(blockId))
+        lookup.get(blockId).toRight(PartialBlockNotFoundException(blockId, relationshipType))
       }
     } yield blocks
 
@@ -47,31 +47,38 @@ private[parsing] object Relationships {
           .to(ArraySeq)
           .flatMap {
             case r if r.`type` == relationshipType => r.ids.asScala.to[ArraySeq[String]](ArraySeq)
-            case _ => ArraySeq.empty[String]
+            case _                                 => ArraySeq.empty[String]
           }
       }
 
       ids <- idsAsStrings.traverse(BlockId.fromString)
     } yield ids
 
-  final case class PartialBlockNotFoundException(badBlockId: BlockId) extends ProductException
+  final case class PartialBlockNotFoundException(
+    badBlockId: BlockId,
+    expectedRelationshipType: sdk.RelationshipType,
+  ) extends ProductException
 
   final case class BlockNotFoundException(
     badBlockId: BlockId,
+    expectedRelationshipType: sdk.RelationshipType,
     foundAs: Option[sdk.BlockType],
-  ) extends ProductException
+    cause: PartialBlockNotFoundException,
+  ) extends ProductException.WithCause(cause)
 
   def enrichAnyBlockNotFoundFailures[A](allBlocks: ArraySeq[sdk.Block], value: ExceptionOr[A]): ExceptionOr[A] =
     value.left.map(enrichBadBlockException(allBlocks, _))
 
   private def enrichBadBlockException(allBlocks: ArraySeq[sdk.Block], e: Exception): Exception =
     e match {
-      case PartialBlockNotFoundException(badBlockId) =>
+      case cause @ PartialBlockNotFoundException(badBlockId, expectedRelationshipType) =>
         BlockNotFoundException(
           badBlockId,
+          expectedRelationshipType,
           foundAs = allBlocks.collectFirst {
             case b if BlockId.fromString(b.id).contains(badBlockId) => b.blockType
           },
+          cause,
         )
       case e @ GenericException(_, Some(cause: Exception)) =>
         e.copy(cause = Some(enrichBadBlockException(allBlocks, cause)))

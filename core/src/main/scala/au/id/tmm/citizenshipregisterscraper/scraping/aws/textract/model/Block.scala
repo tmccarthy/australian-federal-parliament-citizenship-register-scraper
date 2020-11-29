@@ -16,17 +16,8 @@ final case class Line(
   pageNumber: PageNumber,
   geometry: Geometry,
   text: String,
-  children: ArraySeq[Line.Child],
+  children: ArraySeq[AtomBlock],
 ) extends Block
-
-object Line {
-  sealed trait Child
-
-  object Child {
-    case class OfWord(word: Word)                                     extends Child
-    case class OfSelectionElement(selectionElement: SelectionElement) extends Child
-  }
-}
 
 final case class Page(
   id: BlockId,
@@ -88,7 +79,7 @@ object Table {
     columnSpan: Int,
     rowIndex: Int,
     rowSpan: Int,
-    words: ArraySeq[Word],
+    children: ArraySeq[AtomBlock],
   ) extends Block
 
 }
@@ -121,13 +112,20 @@ object KeyValueSet {
     id: BlockId,
     pageNumber: PageNumber,
     geometry: Geometry,
-    words: ArraySeq[Word],
+    children: ArraySeq[AtomBlock],
   ) extends Block
 
   final case class Value(
     id: BlockId,
     pageNumber: PageNumber,
     geometry: Geometry,
-    words: ArraySeq[Word],
+    children: ArraySeq[AtomBlock],
   ) extends Block
+}
+
+sealed trait AtomBlock // TODO this is not a good name
+
+object AtomBlock {
+  final case class OfWord(word: Word)                                     extends AtomBlock
+  final case class OfSelectionElement(selectionElement: SelectionElement) extends AtomBlock
 }

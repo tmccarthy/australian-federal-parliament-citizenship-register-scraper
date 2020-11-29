@@ -1,6 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{BlockId, KeyValueSet, PageNumber, Word}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomBlock, BlockId, KeyValueSet, PageNumber}
 import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.syntax.apply._
@@ -36,7 +36,7 @@ object KeyValueSets {
   }
 
   def extractKeyValueSets(
-    wordLookup: Map[BlockId, Word],
+    atomBlockLookup: Map[BlockId, AtomBlock],
     allBlocks: ArraySeq[sdk.Block],
   ): ExceptionOr[Lookup] =
     for {
@@ -53,7 +53,7 @@ object KeyValueSets {
               isKey <- isKeyBlock(block)
               maybeKeyValueSet <-
                 if (isKey) {
-                  parseKeyValueSet(wordLookup, kvSetBlocksById, block).map(Some.apply)
+                  parseKeyValueSet(atomBlockLookup, kvSetBlocksById, block).map(Some.apply)
                 } else {
                   Right(None)
                 }
@@ -63,35 +63,35 @@ object KeyValueSets {
     } yield new Lookup(keyValueSets)
 
   private def parseKeyValueSet(
-    wordLookup: Map[BlockId, Word],
+    atomBlockLookup: Map[BlockId, AtomBlock],
     kvSetBlocksLookup: Map[BlockId, sdk.Block],
     keyBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet] =
     for {
-      key            <- parseKey(wordLookup, keyBlock)
+      key            <- parseKey(atomBlockLookup, keyBlock)
       valueSdkBlocks <- lookupOrFail(kvSetBlocksLookup, keyBlock, sdk.RelationshipType.VALUE)
       valueSdkBlock  <- valueSdkBlocks.onlyElementOrException
-      value          <- parseValue(wordLookup, valueSdkBlock)
+      value          <- parseValue(atomBlockLookup, valueSdkBlock)
     } yield KeyValueSet(key, value)
 
   private def parseKey(
-    wordLookup: Map[BlockId, Word],
+    atomBlockLookup: Map[BlockId, AtomBlock],
     keyBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet.Key] =
     for {
       id         <- BlockId.fromString(keyBlock.id)
       pageNumber <- PageNumber(keyBlock.page)
       geometry   <- parseGeometry(keyBlock.geometry)
-      words      <- lookupOrIgnore(wordLookup, keyBlock, sdk.RelationshipType.CHILD)
+      children   <- lookupOrIgnore(atomBlockLookup, keyBlock, sdk.RelationshipType.CHILD)
     } yield KeyValueSet.Key(
       id,
       pageNumber,
       geometry,
-      words,
+      children,
     )
 
   private def parseValue(
-    wordLookup: Map[BlockId, Word],
+    atomBlockLookup: Map[BlockId, AtomBlock],
     valueSdkBlock: sdk.Block,
   ): ExceptionOr[KeyValueSet.Value] =
     for {
@@ -99,12 +99,12 @@ object KeyValueSets {
       id         <- BlockId.fromString(valueSdkBlock.id)
       pageNumber <- PageNumber(valueSdkBlock.page)
       geometry   <- parseGeometry(valueSdkBlock.geometry)
-      words      <- lookupOrFail(wordLookup, valueSdkBlock, sdk.RelationshipType.CHILD)
+      children   <- lookupOrFail(atomBlockLookup, valueSdkBlock, sdk.RelationshipType.CHILD)
     } yield KeyValueSet.Value(
       id,
       pageNumber,
       geometry,
-      words,
+      children,
     )
 
   private def isKeyBlock(sdkBlock: sdk.Block): ExceptionOr[Boolean] =

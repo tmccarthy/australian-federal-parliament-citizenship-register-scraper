@@ -29,20 +29,28 @@ object Parse {
 
   private def extractPages(allBlocks: ArraySeq[sdk.Block]): ExceptionOr[ArraySeq[Page]] =
     for {
-      wordsById <- makeLookup[Word](allBlocks, sdk.BlockType.WORD, Words.parseWord)
+      atomBlockById <- for {
+        wordsById <- makeLookup[Word](
+          allBlocks,
+          sdk.BlockType.WORD,
+          Words.parseWord,
+        )
+        selectionElementsById <- makeLookup[SelectionElement](
+          allBlocks,
+          sdk.BlockType.SELECTION_ELEMENT,
+          SelectionElements.parseSelectionElement,
+        )
+      } yield (
+        wordsById.view.mapValues(AtomBlock.OfWord) ++
+          selectionElementsById.view.mapValues(AtomBlock.OfSelectionElement)
+      ).toMap
 
-      selectionElementsById <- makeLookup[SelectionElement](
-        allBlocks,
-        sdk.BlockType.SELECTION_ELEMENT,
-        SelectionElements.parseSelectionElement,
-      )
+      linesById <- makeLookup[Line](allBlocks, sdk.BlockType.LINE, Lines.parseLine(atomBlockById, _))
 
-      linesById <- makeLookup[Line](allBlocks, sdk.BlockType.LINE, Lines.parseLine(wordsById, selectionElementsById, _))
-
-      cellById   <- makeLookup[Table.Cell](allBlocks, sdk.BlockType.CELL, Tables.parseCell(wordsById, _))
+      cellById   <- makeLookup[Table.Cell](allBlocks, sdk.BlockType.CELL, Tables.parseCell(atomBlockById, _))
       tablesById <- makeLookup[Table](allBlocks, sdk.BlockType.TABLE, Tables.parseTable(cellById, _))
 
-      keyValueSetsLookup <- KeyValueSets.extractKeyValueSets(wordsById, allBlocks)
+      keyValueSetsLookup <- KeyValueSets.extractKeyValueSets(atomBlockById, allBlocks)
 
       pages <-
         extract[Page](allBlocks, sdk.BlockType.PAGE, Pages.parsePage(linesById, tablesById, keyValueSetsLookup, _))

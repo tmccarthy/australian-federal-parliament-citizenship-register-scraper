@@ -4,16 +4,13 @@ import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.utilities.errors.ExceptionOr
 import software.amazon.awssdk.services.textract.{model => sdk}
 
-import scala.collection.MapView
-
 private[parsing] object Lines {
 
   import Common._
   import Relationships._
 
   def parseLine(
-    wordLookup: Map[BlockId, Word],
-    selectionElementLookup: Map[BlockId, SelectionElement],
+    atomBlocksLookup: Map[BlockId, AtomBlock],
     block: sdk.Block,
   ): ExceptionOr[Line] =
     for {
@@ -22,11 +19,7 @@ private[parsing] object Lines {
       pageNumber <- PageNumber(block.page)
       geometry   <- parseGeometry(block.geometry)
       text       <- requireNonNull(block.text)
-      childLookup: Map[BlockId, Line.Child] = (
-          (wordLookup.view.mapValues(Line.Child.OfWord): MapView[BlockId, Line.Child]) ++
-            (selectionElementLookup.view.mapValues(Line.Child.OfSelectionElement): MapView[BlockId, Line.Child])
-      ).toMap
-      children <- lookupOrFail(childLookup, block, sdk.RelationshipType.CHILD)
+      children   <- lookupOrFail(atomBlocksLookup, block, sdk.RelationshipType.CHILD)
     } yield Line(
       id,
       pageNumber,

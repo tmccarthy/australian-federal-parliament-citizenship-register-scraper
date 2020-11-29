@@ -1,6 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{BlockId, PageNumber, Table, Word}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomBlock, BlockId, PageNumber, Table}
 import au.id.tmm.utilities.errors.ExceptionOr
 import software.amazon.awssdk.services.textract.{model => sdk}
 
@@ -10,7 +10,7 @@ private[parsing] object Tables {
   import Relationships._
 
   def parseCell(
-    wordLookup: Map[BlockId, Word],
+    atomBlockLookup: Map[BlockId, AtomBlock],
     block: sdk.Block,
   ): ExceptionOr[Table.Cell] =
     for {
@@ -22,7 +22,7 @@ private[parsing] object Tables {
       columnSpan  <- requireNonNull(block.columnSpan)
       rowIndex    <- requireNonNull(block.rowIndex)
       rowSpan     <- requireNonNull(block.rowSpan)
-      words       <- lookupOrFail(wordLookup, block, sdk.RelationshipType.CHILD)
+      children    <- lookupOrFail(atomBlockLookup, block, sdk.RelationshipType.CHILD)
     } yield Table.Cell(
       id,
       pageNumber,
@@ -31,7 +31,7 @@ private[parsing] object Tables {
       columnSpan,
       rowIndex,
       rowSpan,
-      words,
+      children,
     )
 
   def parseTable(
