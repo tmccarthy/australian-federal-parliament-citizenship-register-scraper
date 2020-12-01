@@ -3,10 +3,9 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 import java.time.Duration
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.RetryEffect
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.Client.{JobId, logger}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.AwsTextractAnalysisClient.logger
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing.Parse
-import au.id.tmm.collections.NonEmptyArraySeq
 import au.id.tmm.utilities.errors.GenericException
 import cats.effect.{IO, Timer}
 import org.slf4j.{Logger, LoggerFactory}
@@ -15,7 +14,9 @@ import software.amazon.awssdk.services.{textract => sdk}
 
 import scala.collection.immutable.ArraySeq
 
-class Client(implicit timer: Timer[IO]) {
+class AwsTextractAnalysisClient(
+  implicit timer: Timer[IO],
+) {
 
   private val textractClient = sdk.TextractClient
     .builder()
@@ -27,19 +28,19 @@ class Client(implicit timer: Timer[IO]) {
   ): IO[AnalysisResult] =
     for {
       jobId          <- startAnalysis(input, output)
-      responses      <- getAnalysisResult(jobId)
-      analysisResult <- IO.fromEither(Parse.toModel(responses.underlying))
+      analysisResult <- getAnalysisResult(jobId)
     } yield analysisResult
 
   private def startAnalysis(
     input: sdk.model.DocumentLocation,
     output: sdk.model.OutputConfig,
-  ): IO[JobId] =
+  ): IO[TextractJobId] =
     for {
       startAnalysisRequest <- IO.pure(makeStartAnalysisRequest(input, output))
       _                    <- IO(logger.info("Sent document analysis request"))
       startAnalysisResult  <- IO(textractClient.startDocumentAnalysis(startAnalysisRequest))
-    } yield JobId(startAnalysisResult.jobId)
+      jobId <- IO.fromEither(TextractJobId.fromString(startAnalysisResult.jobId))
+    } yield jobId
 
   private def makeStartAnalysisRequest(
     input: sdk.model.DocumentLocation,
@@ -55,18 +56,19 @@ class Client(implicit timer: Timer[IO]) {
       .outputConfig(output)
       .build()
 
-  private def getAnalysisResult(jobId: JobId): IO[NonEmptyArraySeq[sdk.model.GetDocumentAnalysisResponse]] =
+  def getAnalysisResult(jobId: TextractJobId): IO[AnalysisResult] =
     for {
       firstPage  <- waitUntilFinished(jobId)
       otherPages <- readRemaining(jobId, firstPage)
-    } yield NonEmptyArraySeq.fromHeadTail(firstPage, otherPages)
+      pages <- IO.fromEither(Parse.parsePages(ArraySeq(firstPage) ++ otherPages))
+    } yield AnalysisResult(jobId, pages)
 
-  private def waitUntilFinished(jobId: JobId): IO[sdk.model.GetDocumentAnalysisResponse] =
+  private def waitUntilFinished(jobId: TextractJobId): IO[sdk.model.GetDocumentAnalysisResponse] =
     for {
       getAnalysisRequest <- IO.pure(
         GetDocumentAnalysisRequest
           .builder()
-          .jobId(jobId.asString)
+          .jobId(jobId.asUUID.toString)
           .build(),
       )
       getAnalysisResponse <- RetryEffect.exponentialRetry(
@@ -88,7 +90,7 @@ class Client(implicit timer: Timer[IO]) {
     } yield getAnalysisResponse
 
   private def readRemaining(
-    jobId: JobId,
+    jobId: TextractJobId,
     firstResult: sdk.model.GetDocumentAnalysisResponse,
   ): IO[ArraySeq[sdk.model.GetDocumentAnalysisResponse]] = {
     def go(
@@ -100,7 +102,7 @@ class Client(implicit timer: Timer[IO]) {
         case Some(nextToken) => {
           val request = GetDocumentAnalysisRequest
             .builder()
-            .jobId(jobId.asString)
+            .jobId(jobId.asUUID.toString)
             .nextToken(nextToken)
             .build()
 
@@ -117,8 +119,6 @@ class Client(implicit timer: Timer[IO]) {
 
 }
 
-object Client {
+object AwsTextractAnalysisClient {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
-
-  private case class JobId(asString: String) extends AnyVal
 }

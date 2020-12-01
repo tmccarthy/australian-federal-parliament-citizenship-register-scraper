@@ -2,6 +2,7 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws
 
 import java.net.URI
 
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.AwsTextractAnalysisClient
 import cats.effect.{IO, Timer}
 import software.amazon.awssdk.services.textract.model._
 
@@ -15,7 +16,7 @@ class TextractClient(
   timer: Timer[IO],
 ) {
 
-  private val client = new textract.Client()
+  private val client = new AwsTextractAnalysisClient()
 
   def run(documentLocation: URI): IO[Unit] =
     for {

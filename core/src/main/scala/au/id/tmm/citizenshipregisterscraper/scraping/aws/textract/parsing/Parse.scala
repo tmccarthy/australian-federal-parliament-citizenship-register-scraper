@@ -17,7 +17,7 @@ object Parse {
 
   import Common._
 
-  def toModel(apiResponses: ArraySeq[sdk.GetDocumentAnalysisResponse]): ExceptionOr[AnalysisResult] =
+  def parsePages(apiResponses: ArraySeq[sdk.GetDocumentAnalysisResponse]): ExceptionOr[ArraySeq[Page]] =
     for {
       allBlocks <-
         apiResponses
@@ -26,7 +26,7 @@ object Parse {
           }
 
       pages <- Relationships.enrichAnyBlockNotFoundFailures(allBlocks, extractPages(allBlocks))
-    } yield AnalysisResult(pages)
+    } yield pages
 
   private def extractPages(allBlocks: ArraySeq[sdk.Block]): ExceptionOr[ArraySeq[Page]] =
     for {
