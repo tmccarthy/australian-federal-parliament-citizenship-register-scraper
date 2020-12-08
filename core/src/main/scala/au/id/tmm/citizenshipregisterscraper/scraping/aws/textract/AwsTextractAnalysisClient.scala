@@ -117,6 +117,12 @@ class AwsTextractAnalysisClient(
     go(Option(firstResult.nextToken), responsesSoFar = List.empty).map(_.to(ArraySeq))
   }
 
+  // TODO do this properly
+  def close: IO[Unit] =
+    for {
+      _ <- IO(textractClient.close())
+    } yield ()
+
 }
 
 object AwsTextractAnalysisClient {

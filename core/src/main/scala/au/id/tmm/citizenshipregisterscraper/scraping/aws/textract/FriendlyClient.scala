@@ -1,23 +1,31 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
-import java.net.URI
-import java.nio.file.{Files, Path}
-
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.Document
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
-import au.id.tmm.digest4s.digest.SHA512Digest
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.{S3Key, toIO}
+import au.id.tmm.digest4s.binarycodecs.syntax._
 import au.id.tmm.digest4s.digest.syntax._
+import au.id.tmm.digest4s.digest.{MD5Digest, SHA512Digest}
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.effect.{IO, Timer}
+import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
 import software.amazon.awssdk.services.s3.S3AsyncClient
-import software.amazon.awssdk.services.textract.TextractClient
+import software.amazon.awssdk.services.s3.model.PutObjectRequest
+import software.amazon.awssdk.services.textract.model.{DocumentLocation, OutputConfig, S3Object}
+import sttp.client3._
+import sttp.model.{HeaderNames, Uri => SttpUri}
 
+import java.net.URI
+import java.nio.file.{Files, Path}
+import scala.collection.immutable.ArraySeq
 import scala.concurrent.ExecutionContextExecutor
 
 final class FriendlyClient(
   cache: KeyValueStore,
   s3Bucket: String,
-  s3WorkingDirectoryPrefix: String,
+  s3WorkingDirectoryPrefix: S3Key,
+  httpClient: SttpBackend[IO, Any],
   executionContext: ExecutionContextExecutor,
 )(
   implicit timer: Timer[IO],
@@ -36,49 +44,125 @@ final class FriendlyClient(
 
   private val analysisClient: AwsTextractAnalysisClient = new AwsTextractAnalysisClient()
 
-  private val textractClient = TextractClient
-    .builder()
-    .build()
-
   def runAnalysisFor(documentLocation: FriendlyClient.Document): IO[AnalysisResult] =
     for {
-      (localPath, digest) <- localWithHash(documentLocation)
-      possibleJobId <- cache.get[SHA512Digest, TextractJobId](digest)
+      content <- contentOf(documentLocation)
+      possibleJobId <- cache.get[SHA512Digest, TextractJobId](content.sha512Digest)
       result <- possibleJobId match {
         case Some(jobId) => retrieveJobIdResult(jobId)
         case None =>
           for {
-            analysisResult <- runAnalysis(localPath)
-            _ <- cache.put(digest, analysisResult.jobId)
+            analysisResult <- runAnalysis(content)
+            _ <- cache.put(content.sha512Digest, analysisResult.jobId)
           } yield analysisResult
       }
     } yield result
 
-  private def localWithHash(document: Document): IO[(Path, SHA512Digest)] =
+  private def contentOf(document: Document): IO[DocumentContent] =
+    document match {
+      case local: Document.Local => contentOf(local)
+      case remote: Document.Remote => contentOf(remote)
+    }
+
+  private def contentOf(localDocument: Document.Local): IO[DocumentContent] =
+    IO(Files.readAllBytes(localDocument.path)).map { bytes =>
+      DocumentContent(
+        localDocument.path.getFileName.toString,
+        new ArraySeq.ofByte(bytes),
+        contentType = None,
+        bytes.sha512,
+        bytes.md5,
+      )
+    }
+  private def contentOf(remoteDocument: Document.Remote): IO[DocumentContent] =
     for {
-      localPath <- document match {
-        case Document.Local(path) => IO.pure(path)
-        case Document.Resource(uri) =>
-          for {
-            tempFile <- IO(Files.createTempFile(getClass.getSimpleName, ""))
-            _ <- IO(Files.copy(uri.toURL.openStream(), tempFile))
-          } yield tempFile
+      response: Response[Either[String, Array[Byte]]] <-
+        basicRequest
+          .response(asByteArray)
+          .get(SttpUri(remoteDocument.uri))
+          .send(httpClient)
+
+      contentType: Option[String] = response.header(HeaderNames.ContentType)
+
+      bytes <- IO.fromEither {
+        response.body
+          .map(bytes => new ArraySeq.ofByte(bytes))
+          .left
+          .map(errorResponse =>
+            GenericException(s"Http response code was ${response.code.code}, message was $errorResponse"),
+          )
       }
-      digest <- IO(localPath.sha512OrError).flatMap(IO.fromEither)
-    } yield (localPath, digest)
+
+      fileName <- IO.fromEither {
+        ExceptionOr.catchIn {
+          Path.of(remoteDocument.uri.getPath).getFileName.toString
+        }
+      }
+
+    } yield DocumentContent(
+      fileName,
+      bytes,
+      contentType,
+      bytes.sha512,
+      bytes.md5,
+    )
+
 
   private def retrieveJobIdResult(jobId: TextractJobId): IO[AnalysisResult] =
     analysisClient.getAnalysisResult(jobId)
 
-  private def runAnalysis(documentPath: Path): IO[AnalysisResult] =
+  private def runAnalysis(
+    documentContent: DocumentContent,
+  ): IO[AnalysisResult] =
     for {
-      _ <- ??? : IO[Nothing]
-    } yield ???
+      s3DirectoryForFile <- IO.pure {
+        s3WorkingDirectoryPrefix
+          .resolve(S3Key(documentContent.sha512Digest.asHexString))
+      }
 
-  def close(): IO[Unit] =
+      s3UploadLocation = s3DirectoryForFile
+          .resolve(S3Key(documentContent.fileName))
+
+      textractOutputDirectory = s3DirectoryForFile.resolve("textract_output")
+
+      sdkDocumentLocation = DocumentLocation.builder()
+        .s3Object(S3Object.builder().bucket(s3Bucket).name(s3UploadLocation.toRaw).build())
+        .build()
+
+      sdkOutputLocation = OutputConfig.builder()
+        .s3Bucket(s3Bucket)
+        .s3Prefix(textractOutputDirectory.toRaw)
+        .build()
+
+      _ <- uploadToS3(documentContent, s3UploadLocation)
+      result <- analysisClient.run(sdkDocumentLocation, sdkOutputLocation)
+
+    } yield result
+
+  private def uploadToS3(
+    documentContent: DocumentContent,
+    key: S3Key,
+  ) =
+    for {
+      putRequest <- IO.pure {
+        PutObjectRequest
+          .builder()
+          .bucket(s3Bucket)
+          .key(key.toRaw)
+          .contentMD5(documentContent.md5Digest.asBase64String)
+          .build()
+      }
+
+      putRequestBody = AsyncRequestBody.fromBytes(documentContent.body.unsafeArray)
+
+      _ <- toIO(s3Client.putObject(putRequest, putRequestBody))
+    } yield ()
+
+
+  def close: IO[Unit] =
     for {
       s3CloseResult <- IO(s3Client.close()).attempt
-      textractCloseResult <- IO(textractClient.close()).attempt
+      textractCloseResult <- analysisClient.close.attempt
       result <- IO.fromEither(s3CloseResult orElse textractCloseResult)
     } yield result
 
@@ -89,10 +173,18 @@ object FriendlyClient {
 
   object Document {
     final case class Local(path: Path)  extends Document
-    final case class Resource(uri: URI) extends Document
+    final case class Remote(uri: URI) extends Document
 
     object Local {
       def apply(path: => Path): IO[Local] = IO(new Local(path))
     }
   }
+
+  final case class DocumentContent(
+    fileName: String,
+    body: ArraySeq.ofByte,
+    contentType: Option[String],
+    sha512Digest: SHA512Digest,
+    md5Digest: MD5Digest,
+  )
 }
