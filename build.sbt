@@ -33,6 +33,7 @@ lazy val core = project
     libraryDependencies += "org.jsoup"                        % "jsoup"                          % "1.13.1",
     libraryDependencies += "software.amazon.awssdk"           % "textract"                       % "2.15.33",
     libraryDependencies += "software.amazon.awssdk"           % "s3"                             % "2.15.33",
+    libraryDependencies += "software.amazon.awssdk"           % "dynamodb"                       % "2.15.33",
     libraryDependencies += "org.slf4j"                        % "slf4j-api"                      % "1.7.30",
     libraryDependencies += "org.slf4j"                        % "slf4j-simple"                   % "1.7.30" % Runtime,
   )

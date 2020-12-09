@@ -1,13 +1,13 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.{S3Key, toIO}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.{KeyValueStore, S3Key, toIO}
 import au.id.tmm.digest4s.binarycodecs.syntax._
 import au.id.tmm.digest4s.digest.syntax._
 import au.id.tmm.digest4s.digest.{MD5Digest, SHA512Digest}
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
-import cats.effect.{IO, Timer}
+import cats.effect.{IO, Resource, Timer}
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
 import software.amazon.awssdk.services.s3.S3AsyncClient
@@ -15,9 +15,11 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.textract.model.{DocumentLocation, OutputConfig, S3Object}
 import sttp.client3._
 import sttp.model.{HeaderNames, Uri => SttpUri}
-
 import java.net.URI
 import java.nio.file.{Files, Path}
+
+import org.slf4j.{Logger, LoggerFactory}
+
 import scala.collection.immutable.ArraySeq
 import scala.concurrent.ExecutionContextExecutor
 
@@ -26,30 +28,22 @@ final class FriendlyClient(
   s3Bucket: String,
   s3WorkingDirectoryPrefix: S3Key,
   httpClient: SttpBackend[IO, Any],
-  executionContext: ExecutionContextExecutor,
+  s3Client: S3AsyncClient,
+  analysisClient: AwsTextractAnalysisClient,
 )(
   implicit timer: Timer[IO],
 ) {
-
-  private val s3Client =
-    S3AsyncClient
-      .builder()
-      .asyncConfiguration(
-        ClientAsyncConfiguration
-          .builder()
-          .advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR, executionContext)
-          .build(),
-      )
-      .build()
-
-  private val analysisClient: AwsTextractAnalysisClient = new AwsTextractAnalysisClient()
 
   def runAnalysisFor(documentLocation: FriendlyClient.Document): IO[AnalysisResult] =
     for {
       content <- contentOf(documentLocation)
       possibleJobId <- cache.get[SHA512Digest, TextractJobId](content.sha512Digest)
       result <- possibleJobId match {
-        case Some(jobId) => retrieveJobIdResult(jobId)
+        case Some(jobId) =>
+          for {
+            _ <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
+            jobResult <- retrieveJobIdResult(jobId)
+          } yield jobResult
         case None =>
           for {
             analysisResult <- runAnalysis(content)
@@ -107,7 +101,6 @@ final class FriendlyClient(
       bytes.md5,
     )
 
-
   private def retrieveJobIdResult(jobId: TextractJobId): IO[AnalysisResult] =
     analysisClient.getAnalysisResult(jobId)
 
@@ -158,17 +151,38 @@ final class FriendlyClient(
       _ <- toIO(s3Client.putObject(putRequest, putRequestBody))
     } yield ()
 
-
-  def close: IO[Unit] =
-    for {
-      s3CloseResult <- IO(s3Client.close()).attempt
-      textractCloseResult <- analysisClient.close.attempt
-      result <- IO.fromEither(s3CloseResult orElse textractCloseResult)
-    } yield result
-
 }
 
 object FriendlyClient {
+
+  private val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  def apply(
+    cache: KeyValueStore,
+    s3Bucket: String,
+    s3WorkingDirectoryPrefix: S3Key,
+    httpClient: SttpBackend[IO, Any],
+    executionContext: ExecutionContextExecutor,
+  )(implicit timer: Timer[IO]): Resource[IO, FriendlyClient] =
+    for {
+      analysisClient <- AwsTextractAnalysisClient()
+      s3Client       <- Resource.make(
+        IO {
+          S3AsyncClient
+            .builder()
+            .asyncConfiguration(
+              ClientAsyncConfiguration
+                .builder()
+                .advancedOption(SdkAdvancedAsyncClientOption.FUTURE_COMPLETION_EXECUTOR, executionContext)
+                .build(),
+            )
+            .build()
+        }
+      )(
+        client => IO(client.close())
+      )
+    } yield new FriendlyClient(cache, s3Bucket, s3WorkingDirectoryPrefix, httpClient, s3Client, analysisClient)
+
   sealed trait Document
 
   object Document {

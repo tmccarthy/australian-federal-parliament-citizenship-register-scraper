@@ -1,15 +1,16 @@
 package au.id.tmm.citizenshipregisterscraper.mainclasses
 
-import java.net.URI
-import java.util.concurrent.Executors
-
 import au.id.tmm.citizenshipregisterscraper.documents.senate
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.{S3WorkingEnvironment, TextractClient}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.{DynamoKeyValueStore, S3Key, textract}
 import au.id.tmm.utilities.errors.GenericException
 import cats.Eval
 import cats.effect.{ContextShift, ExitCode, IO, IOApp}
 import sttp.client3.asynchttpclient.cats.AsyncHttpClientCatsBackend
 
+import java.net.URI
+import java.util.concurrent.Executors
+import scala.collection.immutable.ArraySeq
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 
 object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
@@ -30,17 +31,27 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      // TODO something here isn't getting released at the end
       reference  <- abetzDisclosure
-      httpClient <- AsyncHttpClientCatsBackend[IO]()
-      s3WorkingEnvironment = new S3WorkingEnvironment(
-        bucket = S3WorkingEnvironment.S3BucketName("au.id.tmm.temp"),
-        namePrefix = S3WorkingEnvironment.S3Key(getClass.getCanonicalName.split('.').toList),
-        httpClient,
-        executionContext.value,
-      )
-      client = new TextractClient(executionContext.value, s3WorkingEnvironment)
-      _ <- client.run(reference.documentLocation)
+
+      _ <- AsyncHttpClientCatsBackend.resource[IO]().use { httpClient =>
+        DynamoKeyValueStore(getClass.getCanonicalName.replace("$", "") + ".cache").use { keyValueStore =>
+          FriendlyClient(
+            cache = keyValueStore,
+            s3Bucket = "au.id.tmm.temp",
+            s3WorkingDirectoryPrefix = S3Key("australian-federal-parliament-citizenship-register-scraper", "working"),
+            httpClient,
+            executionContext.value,
+          ).use { friendlyClient =>
+            friendlyClient.runAnalysisFor(FriendlyClient.Document.Remote(reference.documentLocation)).flatMap { analysisResult =>
+              val tables = analysisResult.pages.to(ArraySeq).flatMap(_.children).collect {
+                case textract.model.Page.Child.OfTable(table) => table
+              }
+
+              IO(tables.foreach(t => println(t.rows)))
+            }
+          }
+        }
+      }
     } yield ExitCode.Success
 
   private val executionContext: Eval[ExecutionContextExecutorService] =

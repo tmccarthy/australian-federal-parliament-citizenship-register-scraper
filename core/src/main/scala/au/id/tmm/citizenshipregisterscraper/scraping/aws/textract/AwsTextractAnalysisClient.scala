@@ -1,26 +1,23 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
 import java.time.Duration
-
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.RetryEffect
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.AwsTextractAnalysisClient.logger
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing.Parse
 import au.id.tmm.utilities.errors.GenericException
-import cats.effect.{IO, Timer}
+import cats.effect.{IO, Resource, Timer}
 import org.slf4j.{Logger, LoggerFactory}
 import software.amazon.awssdk.services.textract.model.GetDocumentAnalysisRequest
 import software.amazon.awssdk.services.{textract => sdk}
 
 import scala.collection.immutable.ArraySeq
 
-class AwsTextractAnalysisClient(
+class AwsTextractAnalysisClient private (
+  textractClient: sdk.TextractClient,
+)(
   implicit timer: Timer[IO],
 ) {
-
-  private val textractClient = sdk.TextractClient
-    .builder()
-    .build()
 
   def run(
     input: sdk.model.DocumentLocation,
@@ -68,7 +65,7 @@ class AwsTextractAnalysisClient(
       getAnalysisRequest <- IO.pure(
         GetDocumentAnalysisRequest
           .builder()
-          .jobId(jobId.asUUID.toString)
+          .jobId(jobId.asString)
           .build(),
       )
       getAnalysisResponse <- RetryEffect.exponentialRetry(
@@ -102,7 +99,7 @@ class AwsTextractAnalysisClient(
         case Some(nextToken) => {
           val request = GetDocumentAnalysisRequest
             .builder()
-            .jobId(jobId.asUUID.toString)
+            .jobId(jobId.asString)
             .nextToken(nextToken)
             .build()
 
@@ -117,14 +114,13 @@ class AwsTextractAnalysisClient(
     go(Option(firstResult.nextToken), responsesSoFar = List.empty).map(_.to(ArraySeq))
   }
 
-  // TODO do this properly
-  def close: IO[Unit] =
-    for {
-      _ <- IO(textractClient.close())
-    } yield ()
-
 }
 
 object AwsTextractAnalysisClient {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
+
+  def apply()(implicit timer: Timer[IO]): Resource[IO, AwsTextractAnalysisClient] =
+    for {
+      sdkClient <- Resource.make(IO(sdk.TextractClient.builder().build()))(sdkClient => IO(sdkClient.close()))
+    } yield new AwsTextractAnalysisClient(sdkClient)
 }
