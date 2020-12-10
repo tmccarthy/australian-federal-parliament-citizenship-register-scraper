@@ -36,31 +36,31 @@ final class FriendlyClient(
   httpClient: SttpBackend[IO, Any],
   s3Client: S3AsyncClient,
   analysisClient: AwsTextractAnalysisClient,
-)(
-  implicit timer: Timer[IO],
+)(implicit
+  timer: Timer[IO],
 ) {
 
   def runAnalysisFor(documentLocation: FriendlyClient.Document): IO[AnalysisResult] =
     for {
-      content <- contentOf(documentLocation)
+      content       <- contentOf(documentLocation)
       possibleJobId <- cache.getFor(content.sha512Digest)
       result <- possibleJobId match {
         case Some(jobId) =>
           for {
-            _ <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
+            _         <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
             jobResult <- retrieveJobIdResult(jobId)
           } yield jobResult
         case None =>
           for {
             analysisResult <- runAnalysis(content)
-            _ <- cache.update(content.sha512Digest, analysisResult.jobId)
+            _              <- cache.update(content.sha512Digest, analysisResult.jobId)
           } yield analysisResult
       }
     } yield result
 
   private def contentOf(document: Document): IO[DocumentContent] =
     document match {
-      case local: Document.Local => contentOf(local)
+      case local: Document.Local   => contentOf(local)
       case remote: Document.Remote => contentOf(remote)
     }
 
@@ -119,21 +119,26 @@ final class FriendlyClient(
           .resolve(S3Key(documentContent.sha512Digest.asHexString))
       }
 
-      s3UploadLocation = s3DirectoryForFile
+      s3UploadLocation =
+        s3DirectoryForFile
           .resolve(S3Key(documentContent.fileName))
 
       textractOutputDirectory = s3DirectoryForFile.resolve("textract_output")
 
-      sdkDocumentLocation = DocumentLocation.builder()
-        .s3Object(S3Object.builder().bucket(s3Bucket).name(s3UploadLocation.toRaw).build())
-        .build()
+      sdkDocumentLocation =
+        DocumentLocation
+          .builder()
+          .s3Object(S3Object.builder().bucket(s3Bucket).name(s3UploadLocation.toRaw).build())
+          .build()
 
-      sdkOutputLocation = OutputConfig.builder()
-        .s3Bucket(s3Bucket)
-        .s3Prefix(textractOutputDirectory.toRaw)
-        .build()
+      sdkOutputLocation =
+        OutputConfig
+          .builder()
+          .s3Bucket(s3Bucket)
+          .s3Prefix(textractOutputDirectory.toRaw)
+          .build()
 
-      _ <- uploadToS3(documentContent, s3UploadLocation)
+      _      <- uploadToS3(documentContent, s3UploadLocation)
       result <- analysisClient.run(sdkDocumentLocation, sdkOutputLocation)
 
     } yield result
@@ -169,10 +174,12 @@ object FriendlyClient {
     s3WorkingDirectoryPrefix: S3Key,
     httpClient: SttpBackend[IO, Any],
     executionContext: ExecutionContextExecutor,
-  )(implicit timer: Timer[IO]): Resource[IO, FriendlyClient] =
+  )(implicit
+    timer: Timer[IO],
+  ): Resource[IO, FriendlyClient] =
     for {
       analysisClient <- AwsTextractAnalysisClient()
-      s3Client       <- Resource.make(
+      s3Client <- Resource.make(
         IO {
           S3AsyncClient
             .builder()
@@ -183,17 +190,15 @@ object FriendlyClient {
                 .build(),
             )
             .build()
-        }
-      )(
-        client => IO(client.close())
-      )
+        },
+      )(client => IO(client.close()))
     } yield new FriendlyClient(cache, s3Bucket, s3WorkingDirectoryPrefix, httpClient, s3Client, analysisClient)
 
   sealed trait Document
 
   object Document {
-    final case class Local(path: Path)  extends Document
-    final case class Remote(uri: URI) extends Document
+    final case class Local(path: Path) extends Document
+    final case class Remote(uri: URI)  extends Document
 
     object Local {
       def apply(path: => Path): IO[Local] = IO(new Local(path))
@@ -217,7 +222,7 @@ object FriendlyClient {
 
   object JobIdCache {
 
-    final class UsingDynamoDb private(
+    final class UsingDynamoDb private (
       tableName: String,
       client: DynamoDbClient,
     ) extends JobIdCache {
@@ -229,26 +234,26 @@ object FriendlyClient {
               .tableName(tableName)
               .key(
                 Map(
-                  "documentDigest" -> AttributeValue.builder()
+                  "documentDigest" -> AttributeValue
+                    .builder()
                     .s(documentDigest.asHexString)
                     .build(),
-                ).asJava
+                ).asJava,
               )
               .build()
           }
 
           response <- IO(client.getItem(request))
 
-          maybeAttributeValue <-
-            Option(response.item())
-              .filterNot(_.isEmpty)
-              .traverse { javaMap =>
-                IO.fromEither {
-                  javaMap.asScala
-                    .get("jobId")
-                    .toRight(GenericException("No key for item"))
-                }
+          maybeAttributeValue <- Option(response.item())
+            .filterNot(_.isEmpty)
+            .traverse { javaMap =>
+              IO.fromEither {
+                javaMap.asScala
+                  .get("jobId")
+                  .toRight(GenericException("No key for item"))
               }
+            }
 
           rawJobId <- IO.fromEither {
             maybeAttributeValue.traverse { attributeValue =>
@@ -271,7 +276,7 @@ object FriendlyClient {
               .item(
                 Map(
                   "documentDigest" -> AttributeValue.builder().s(documentDigest.asHexString).build(),
-                  "jobId" -> AttributeValue.builder().s(textractJobId.asString).build(),
+                  "jobId"          -> AttributeValue.builder().s(textractJobId.asString).build(),
                 ).asJava,
               )
               .build(),
@@ -286,10 +291,16 @@ object FriendlyClient {
       def apply(tableName: String)(implicit timer: Timer[IO]): Resource[IO, UsingDynamoDb] =
         for {
           client <- Resource.make(IO(DynamoDbClient.builder().build()))(dynamoDbClient => IO(dynamoDbClient.close()))
-          dynamoKeyValueStore <- Resource.liftF(makeTableIfNoneDefined(client, tableName).as(new UsingDynamoDb(tableName, client)))
+          dynamoKeyValueStore <-
+            Resource.liftF(makeTableIfNoneDefined(client, tableName).as(new UsingDynamoDb(tableName, client)))
         } yield dynamoKeyValueStore
 
-      private def makeTableIfNoneDefined(client: DynamoDbClient, tableName: String)(implicit timer: Timer[IO]): IO[Unit] =
+      private def makeTableIfNoneDefined(
+        client: DynamoDbClient,
+        tableName: String,
+      )(implicit
+        timer: Timer[IO],
+      ): IO[Unit] =
         for {
           describeTableRequest <- IO.pure(DescribeTableRequest.builder().tableName(tableName).build())
           tableExists <- IO(client.describeTable(describeTableRequest)).as(true).recover {
@@ -306,12 +317,19 @@ object FriendlyClient {
                     .builder()
                     .tableName(tableName)
                     .billingMode(BillingMode.PAY_PER_REQUEST)
-                    .attributeDefinitions(AttributeDefinition.builder().attributeName("documentDigest").attributeType(ScalarAttributeType.S).build())
+                    .attributeDefinitions(
+                      AttributeDefinition
+                        .builder()
+                        .attributeName("documentDigest")
+                        .attributeType(ScalarAttributeType.S)
+                        .build(),
+                    )
                     .keySchema(KeySchemaElement.builder().attributeName("documentDigest").keyType(KeyType.HASH).build())
-                    .build()
+                    .build(),
                 )
 
-                createTableResponse <- IO(client.createTable(createTableRequest)) // TODO need to wait for the able creation to complete
+                createTableResponse <-
+                  IO(client.createTable(createTableRequest)) // TODO need to wait for the able creation to complete
 
                 _ <- RetryEffect.exponentialRetry(
                   op = waitForTableCreated(client, tableName),
@@ -333,8 +351,8 @@ object FriendlyClient {
 
           result <- Option(describeTableResult.table).map(_.tableStatus) match {
             case Some(TableStatus.CREATING) => IO.raiseError(GenericException("Table still creating"))
-            case Some(_) => IO.pure(RetryEffect.Result.Finished(()))
-            case None => IO.pure(RetryEffect.Result.FailedFinished(GenericException("Table not created")))
+            case Some(_)                    => IO.pure(RetryEffect.Result.Finished(()))
+            case None                       => IO.pure(RetryEffect.Result.FailedFinished(GenericException("Table not created")))
           }
         } yield result
       }

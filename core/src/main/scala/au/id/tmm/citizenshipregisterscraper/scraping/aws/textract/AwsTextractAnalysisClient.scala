@@ -15,8 +15,8 @@ import scala.collection.immutable.ArraySeq
 
 class AwsTextractAnalysisClient private (
   textractClient: sdk.TextractClient,
-)(
-  implicit timer: Timer[IO],
+)(implicit
+  timer: Timer[IO],
 ) {
 
   def run(
@@ -36,7 +36,7 @@ class AwsTextractAnalysisClient private (
       startAnalysisRequest <- IO.pure(makeStartAnalysisRequest(input, output))
       _                    <- IO(logger.info("Sent document analysis request"))
       startAnalysisResult  <- IO(textractClient.startDocumentAnalysis(startAnalysisRequest))
-      jobId <- IO.fromEither(TextractJobId.fromString(startAnalysisResult.jobId))
+      jobId                <- IO.fromEither(TextractJobId.fromString(startAnalysisResult.jobId))
     } yield jobId
 
   private def makeStartAnalysisRequest(
@@ -57,7 +57,7 @@ class AwsTextractAnalysisClient private (
     for {
       firstPage  <- waitUntilFinished(jobId)
       otherPages <- readRemaining(jobId, firstPage)
-      pages <- IO.fromEither(Parse.parsePages(ArraySeq(firstPage) ++ otherPages))
+      pages      <- IO.fromEither(Parse.parsePages(ArraySeq(firstPage) ++ otherPages))
     } yield AnalysisResult(jobId, pages)
 
   private def waitUntilFinished(jobId: TextractJobId): IO[sdk.model.GetDocumentAnalysisResponse] =

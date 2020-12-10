@@ -13,8 +13,9 @@ final case class S3Key(pathElements: NonEmptyArraySeq[String]) extends AnyVal {
 object S3Key {
   def apply(asString: String): S3Key =
     new S3Key(
-      NonEmptyArraySeq.fromArraySeq(ArraySeq.unsafeWrapArray(asString.split('/')))
-        .getOrElse(NonEmptyArraySeq.of(""))
+      NonEmptyArraySeq
+        .fromArraySeq(ArraySeq.unsafeWrapArray(asString.split('/')))
+        .getOrElse(NonEmptyArraySeq.of("")),
     )
   def apply(headPathElement: String, tailPathElements: String*): S3Key =
     new S3Key(NonEmptyArraySeq.fromHeadTail(headPathElement, tailPathElements))

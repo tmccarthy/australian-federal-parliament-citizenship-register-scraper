@@ -31,7 +31,8 @@ final case class Line(
   geometry: Geometry,
   text: String,
   children: ArraySeq[AtomicBlock],
-) extends Block with ReadableText {
+) extends Block
+    with ReadableText {
   override def readableText: String = text
 }
 
@@ -60,10 +61,11 @@ final case class SelectionElement(
   geometry: Geometry,
   status: SelectionElement.Status,
 ) extends AtomicBlock {
-  override def readableText: String = status match {
-    case Status.Selected => "☑"
-    case Status.NotSelected => "☐"
-  }
+  override def readableText: String =
+    status match {
+      case Status.Selected    => "☑"
+      case Status.NotSelected => "☐"
+    }
 }
 
 object SelectionElement {
@@ -101,7 +103,8 @@ object Table {
     rowIndex: Int,
     rowSpan: Int,
     children: ArraySeq[AtomicBlock],
-  ) extends Block with ReadableText {
+  ) extends Block
+      with ReadableText {
     override def readableText: String = ReadableText.from(children)
   }
 
@@ -138,7 +141,8 @@ object KeyValueSet {
     pageNumber: PageNumber,
     geometry: Geometry,
     children: ArraySeq[AtomicBlock],
-  ) extends Block with ReadableText {
+  ) extends Block
+      with ReadableText {
     override def readableText: String = ReadableText.from(children)
   }
 
@@ -147,7 +151,8 @@ object KeyValueSet {
     pageNumber: PageNumber,
     geometry: Geometry,
     children: ArraySeq[AtomicBlock],
-  ) extends Block with ReadableText {
+  ) extends Block
+      with ReadableText {
     override def readableText: String = ReadableText.from(children)
   }
 }

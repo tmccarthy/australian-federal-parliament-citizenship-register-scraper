@@ -16,10 +16,14 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutorService}
 object TestSenateStatementInRelationToCitizenshipScraping extends IOApp.WithContext {
 
   override protected def executionContextResource: Resource[SyncIO, ExecutionContextExecutorService] =
-    Resource.make(SyncIO(Executors.newFixedThreadPool(8)))(pool => SyncIO{
-      pool.shutdown()
-      pool.awaitTermination(10, TimeUnit.SECONDS)
-    }).map(ExecutionContext.fromExecutorService)
+    Resource
+      .make(SyncIO(Executors.newFixedThreadPool(8)))(pool =>
+        SyncIO {
+          pool.shutdown()
+          pool.awaitTermination(10, TimeUnit.SECONDS)
+        },
+      )
+      .map(ExecutionContext.fromExecutorService)
 
   private def disclosureForName(name: String): IO[senate.DocumentReference] =
     for {
@@ -37,25 +41,27 @@ object TestSenateStatementInRelationToCitizenshipScraping extends IOApp.WithCont
 
   override def run(args: List[String]): IO[ExitCode] =
     for {
-      reference  <- abetzDisclosure
+      reference <- abetzDisclosure
 
       _ <- AsyncHttpClientCatsBackend.resource[IO]().use { httpClient =>
-        FriendlyClient.JobIdCache.UsingDynamoDb(getClass.getCanonicalName.replace("$", "") + ".cache").use { jobIdCache =>
-          FriendlyClient(
-            cache = jobIdCache,
-            s3Bucket = "au.id.tmm.temp",
-            s3WorkingDirectoryPrefix = S3Key("australian-federal-parliament-citizenship-register-scraper", "working"),
-            httpClient,
-            executionContext.asInstanceOf[ExecutionContextExecutorService],
-          ).use { friendlyClient =>
-            friendlyClient.runAnalysisFor(FriendlyClient.Document.Remote(reference.documentLocation)).flatMap { analysisResult =>
-              val tables = analysisResult.pages.to(ArraySeq).flatMap(_.children).collect {
-                case textract.model.Page.Child.OfTable(table) => table
-              }
+        FriendlyClient.JobIdCache.UsingDynamoDb(getClass.getCanonicalName.replace("$", "") + ".cache").use {
+          jobIdCache =>
+            FriendlyClient(
+              cache = jobIdCache,
+              s3Bucket = "au.id.tmm.temp",
+              s3WorkingDirectoryPrefix = S3Key("australian-federal-parliament-citizenship-register-scraper", "working"),
+              httpClient,
+              executionContext.asInstanceOf[ExecutionContextExecutorService],
+            ).use { friendlyClient =>
+              friendlyClient.runAnalysisFor(FriendlyClient.Document.Remote(reference.documentLocation)).flatMap {
+                analysisResult =>
+                  val tables = analysisResult.pages.to(ArraySeq).flatMap(_.children).collect {
+                    case textract.model.Page.Child.OfTable(table) => table
+                  }
 
-              IO(tables.foreach(t => println(t.rows)))
+                  IO(tables.foreach(t => println(t.rows)))
+              }
             }
-          }
         }
       }
     } yield ExitCode.Success
