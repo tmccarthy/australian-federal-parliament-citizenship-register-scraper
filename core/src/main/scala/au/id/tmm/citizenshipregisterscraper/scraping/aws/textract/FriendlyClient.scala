@@ -1,30 +1,36 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
+import java.net.URI
+import java.nio.file.{Files, Path}
+import java.time.Duration
+
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.{KeyValueStore, S3Key, toIO}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.{RetryEffect, S3Key, toIO}
 import au.id.tmm.digest4s.binarycodecs.syntax._
 import au.id.tmm.digest4s.digest.syntax._
 import au.id.tmm.digest4s.digest.{MD5Digest, SHA512Digest}
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.effect.{IO, Resource, Timer}
+import cats.syntax.applicativeError._
+import cats.syntax.traverse.toTraverseOps
+import org.slf4j.{Logger, LoggerFactory}
 import software.amazon.awssdk.core.async.AsyncRequestBody
 import software.amazon.awssdk.core.client.config.{ClientAsyncConfiguration, SdkAdvancedAsyncClientOption}
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient
+import software.amazon.awssdk.services.dynamodb.model._
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
 import software.amazon.awssdk.services.textract.model.{DocumentLocation, OutputConfig, S3Object}
 import sttp.client3._
 import sttp.model.{HeaderNames, Uri => SttpUri}
-import java.net.URI
-import java.nio.file.{Files, Path}
-
-import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.immutable.ArraySeq
 import scala.concurrent.ExecutionContextExecutor
+import scala.jdk.CollectionConverters._
 
 final class FriendlyClient(
-  cache: KeyValueStore,
+  cache: FriendlyClient.JobIdCache,
   s3Bucket: String,
   s3WorkingDirectoryPrefix: S3Key,
   httpClient: SttpBackend[IO, Any],
@@ -37,7 +43,7 @@ final class FriendlyClient(
   def runAnalysisFor(documentLocation: FriendlyClient.Document): IO[AnalysisResult] =
     for {
       content <- contentOf(documentLocation)
-      possibleJobId <- cache.get[SHA512Digest, TextractJobId](content.sha512Digest)
+      possibleJobId <- cache.getFor(content.sha512Digest)
       result <- possibleJobId match {
         case Some(jobId) =>
           for {
@@ -47,7 +53,7 @@ final class FriendlyClient(
         case None =>
           for {
             analysisResult <- runAnalysis(content)
-            _ <- cache.put(content.sha512Digest, analysisResult.jobId)
+            _ <- cache.update(content.sha512Digest, analysisResult.jobId)
           } yield analysisResult
       }
     } yield result
@@ -158,7 +164,7 @@ object FriendlyClient {
   private val logger: Logger = LoggerFactory.getLogger(getClass)
 
   def apply(
-    cache: KeyValueStore,
+    cache: JobIdCache,
     s3Bucket: String,
     s3WorkingDirectoryPrefix: S3Key,
     httpClient: SttpBackend[IO, Any],
@@ -192,6 +198,7 @@ object FriendlyClient {
     object Local {
       def apply(path: => Path): IO[Local] = IO(new Local(path))
     }
+
   }
 
   final case class DocumentContent(
@@ -201,4 +208,138 @@ object FriendlyClient {
     sha512Digest: SHA512Digest,
     md5Digest: MD5Digest,
   )
+
+  trait JobIdCache {
+    def getFor(documentDigest: SHA512Digest): IO[Option[TextractJobId]]
+
+    def update(documentDigest: SHA512Digest, textractJobId: TextractJobId): IO[Unit]
+  }
+
+  object JobIdCache {
+
+    final class UsingDynamoDb private(
+      tableName: String,
+      client: DynamoDbClient,
+    ) extends JobIdCache {
+      override def getFor(documentDigest: SHA512Digest): IO[Option[TextractJobId]] =
+        for {
+          request <- IO.pure {
+            GetItemRequest
+              .builder()
+              .tableName(tableName)
+              .key(
+                Map(
+                  "documentDigest" -> AttributeValue.builder()
+                    .s(documentDigest.asHexString)
+                    .build(),
+                ).asJava
+              )
+              .build()
+          }
+
+          response <- IO(client.getItem(request))
+
+          maybeAttributeValue <-
+            Option(response.item())
+              .filterNot(_.isEmpty)
+              .traverse { javaMap =>
+                IO.fromEither {
+                  javaMap.asScala
+                    .get("jobId")
+                    .toRight(GenericException("No key for item"))
+                }
+              }
+
+          rawJobId <- IO.fromEither {
+            maybeAttributeValue.traverse { attributeValue =>
+              for {
+                s <- Option(attributeValue.s).toRight(GenericException("Value wasn't string"))
+              } yield s
+            }
+          }
+
+          jobId <- IO.fromEither(rawJobId.traverse(TextractJobId.fromString))
+
+        } yield jobId
+
+      override def update(documentDigest: SHA512Digest, textractJobId: TextractJobId): IO[Unit] =
+        for {
+          request <- IO.pure(
+            PutItemRequest
+              .builder()
+              .tableName(tableName)
+              .item(
+                Map(
+                  "documentDigest" -> AttributeValue.builder().s(documentDigest.asHexString).build(),
+                  "jobId" -> AttributeValue.builder().s(textractJobId.asString).build(),
+                ).asJava,
+              )
+              .build(),
+          )
+
+          response <- IO(client.putItem(request))
+        } yield ()
+
+    }
+
+    object UsingDynamoDb {
+      def apply(tableName: String)(implicit timer: Timer[IO]): Resource[IO, UsingDynamoDb] =
+        for {
+          client <- Resource.make(IO(DynamoDbClient.builder().build()))(dynamoDbClient => IO(dynamoDbClient.close()))
+          dynamoKeyValueStore <- Resource.liftF(makeTableIfNoneDefined(client, tableName).as(new UsingDynamoDb(tableName, client)))
+        } yield dynamoKeyValueStore
+
+      private def makeTableIfNoneDefined(client: DynamoDbClient, tableName: String)(implicit timer: Timer[IO]): IO[Unit] =
+        for {
+          describeTableRequest <- IO.pure(DescribeTableRequest.builder().tableName(tableName).build())
+          tableExists <- IO(client.describeTable(describeTableRequest)).as(true).recover {
+            case _: ResourceNotFoundException => false
+          }
+
+          _ <-
+            if (tableExists) {
+              IO.unit
+            } else {
+              for {
+                createTableRequest <- IO.pure(
+                  CreateTableRequest
+                    .builder()
+                    .tableName(tableName)
+                    .billingMode(BillingMode.PAY_PER_REQUEST)
+                    .attributeDefinitions(AttributeDefinition.builder().attributeName("documentDigest").attributeType(ScalarAttributeType.S).build())
+                    .keySchema(KeySchemaElement.builder().attributeName("documentDigest").keyType(KeyType.HASH).build())
+                    .build()
+                )
+
+                createTableResponse <- IO(client.createTable(createTableRequest)) // TODO need to wait for the able creation to complete
+
+                _ <- RetryEffect.exponentialRetry(
+                  op = waitForTableCreated(client, tableName),
+                  initialDelay = Duration.ofSeconds(10),
+                  factor = 1,
+                  maxWait = Duration.ofMinutes(1),
+                )
+
+              } yield ()
+            }
+
+        } yield ()
+
+      private def waitForTableCreated(client: DynamoDbClient, tableName: String): IO[RetryEffect.Result[Unit]] = {
+        val request = DescribeTableRequest.builder().tableName(tableName).build()
+
+        for {
+          describeTableResult <- IO(client.describeTable(request))
+
+          result <- Option(describeTableResult.table).map(_.tableStatus) match {
+            case Some(TableStatus.CREATING) => IO.raiseError(GenericException("Table still creating"))
+            case Some(_) => IO.pure(RetryEffect.Result.Finished(()))
+            case None => IO.pure(RetryEffect.Result.FailedFinished(GenericException("Table not created")))
+          }
+        } yield result
+      }
+    }
+
+  }
+
 }
