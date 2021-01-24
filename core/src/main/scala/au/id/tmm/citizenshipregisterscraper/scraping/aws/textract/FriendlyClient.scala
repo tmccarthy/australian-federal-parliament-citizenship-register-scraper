@@ -4,6 +4,7 @@ import java.net.URI
 import java.nio.file.{Files, Path}
 import java.time.Duration
 
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{makeTableIfNoneDefined, waitForTableCreated}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.{RetryEffect, S3Key, toIO}
@@ -218,6 +219,8 @@ object FriendlyClient {
     def getFor(documentDigest: SHA512Digest): IO[Option[TextractJobId]]
 
     def update(documentDigest: SHA512Digest, textractJobId: TextractJobId): IO[Unit]
+
+    def clear: IO[Unit]
   }
 
   object JobIdCache {
@@ -225,6 +228,8 @@ object FriendlyClient {
     final class UsingDynamoDb private (
       tableName: String,
       client: DynamoDbClient,
+    )(implicit
+      timer: Timer[IO],
     ) extends JobIdCache {
       override def getFor(documentDigest: SHA512Digest): IO[Option[TextractJobId]] =
         for {
@@ -283,6 +288,20 @@ object FriendlyClient {
           )
 
           response <- IO(client.putItem(request))
+        } yield ()
+
+      override def clear: IO[Unit] =
+        for {
+          deleteTableRequest <- IO.pure(
+            DeleteTableRequest.builder().tableName(tableName).build()
+          )
+
+          _ <- IO(client.deleteTable(deleteTableRequest))
+
+          _ <- IO(logger.info(s"Deleted table $tableName"))
+
+          _ <- makeTableIfNoneDefined(client, tableName)
+          _ <- waitForTableCreated(client, tableName)
         } yield ()
 
     }
