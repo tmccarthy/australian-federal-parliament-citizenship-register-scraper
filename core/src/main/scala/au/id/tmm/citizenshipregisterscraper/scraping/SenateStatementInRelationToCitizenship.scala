@@ -6,6 +6,7 @@ import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 
 final case class SenateStatementInRelationToCitizenship(
@@ -57,6 +58,8 @@ object SenateStatementInRelationToCitizenship {
     for {
       pages <- Right(textractAnalysis.pages)
 
+      resultNavigator = ResultNavigator(textractAnalysis)
+
       page1 <- getOrFail(pages, index = 0)
 
       _ <- Either.cond(
@@ -70,7 +73,7 @@ object SenateStatementInRelationToCitizenship {
 
 
 
-      result <- Left(GenericException("Not implemented"))
+      result <- ExceptionOr.catchIn(???)
     } yield result
 
 }
