@@ -2,16 +2,12 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.Page.Child
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator.{
-  NoParentFor,
-  NotFoundInResults,
-  Parent,
-  Siblings,
-}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator.{NoParentFor, NotFoundInResults, Parent, Siblings}
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException, ProductException}
 
 import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
+import scala.reflect.ClassTag
 
 final class ResultNavigator private (
   analysisResult: AnalysisResult,
@@ -20,6 +16,7 @@ final class ResultNavigator private (
   tableParents: collection.Map[Table, Page],
   lineParents: collection.Map[Line, Page],
   tableCellLookup: collection.Map[Table, Map[(Int, Int), Table.Cell]],
+  kvSetsForKeys: collection.Map[KeyValueSet.Key, KeyValueSet],
 ) {
 
   def parentOf(atomicBlock: AtomicBlock): ExceptionOr[Parent.ForAtomicBlock] =
@@ -85,6 +82,18 @@ final class ResultNavigator private (
           .toRight(GenericException(s"Cell $columnIndex, $rowIndex not found"))
     } yield cell
 
+  def kvSetFor(key: KeyValueSet.Key): ExceptionOr[KeyValueSet] =
+    kvSetsForKeys.get(key).toRight(NotFoundInResults(key))
+
+  def valueFor(key: KeyValueSet.Key): ExceptionOr[KeyValueSet.Value] = kvSetFor(key).map(_.value)
+
+  def recursivelySearchChildrenOf[B1 <: Block : ClassTag, B2 <: Block](block: Block)(collect: PartialFunction[B1, B2]): LazyList[B2] =
+    LazyList.from {
+      BlockIterator.recursivelyIterateBlockAndChildren(block, includeKeyValueSets = true).collect {
+        case b1: B1 if collect.isDefinedAt(b1) => collect(b1)
+      }
+    }
+
 }
 
 object ResultNavigator {
@@ -137,6 +146,7 @@ object ResultNavigator {
     val lineParents: mutable.Map[Line, Page] = mutable.Map()
 
     val tableCellLookup: mutable.Map[Table, Map[(Int, Int), Table.Cell]] = mutable.Map()
+    val kvForKeyLookup: mutable.Map[KeyValueSet.Key, KeyValueSet] = mutable.Map()
 
     analysisResult.pages.foreach { page =>
       page.children.foreach {
@@ -157,7 +167,9 @@ object ResultNavigator {
             }
           }
         }
-        case Child.OfKeyValueSet(keyValueSet) => ()
+        case Child.OfKeyValueSet(keyValueSet) => {
+          kvForKeyLookup.put(keyValueSet.key, keyValueSet)
+        }
       }
     }
 
@@ -168,6 +180,7 @@ object ResultNavigator {
       tableParents,
       lineParents,
       tableCellLookup,
+      kvForKeyLookup,
     )
   }
 
