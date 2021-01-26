@@ -72,12 +72,11 @@ object SenateStatementInRelationToCitizenship {
           .onlyElementOrException
           .wrapExceptionWithMessage("Couldn't find the title")
 
-      surname <- getValueFromKey(resultNavigator, PageNumber.`0`, "surname")
-      otherNames <- getValueFromKey(resultNavigator, PageNumber.`0`, "other names")
-      rawState <- getValueFromKey(resultNavigator, PageNumber.`0`, "state")
-      state <- parseStateFrom(rawState)
-      placeOfBirth <- getValueFromKey(resultNavigator, PageNumber.`0`, "place of birth")
-      citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`0`, "citizenship held at birth")
+      surname <- getValueFromKey(resultNavigator, PageNumber.`1`, "surname")
+      otherNames <- getValueFromKey(resultNavigator, PageNumber.`1`, "other names")
+      state <- getValueFromKey(resultNavigator, PageNumber.`1`, "state").flatMap(parseStateFrom)
+      placeOfBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
+      citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "citizenship held at birth")
 
       result = SenateStatementInRelationToCitizenship(
         surname,

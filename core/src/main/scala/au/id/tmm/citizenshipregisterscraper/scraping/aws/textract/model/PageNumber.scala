@@ -7,11 +7,10 @@ final case class PageNumber private (asInt: Int) extends AnyVal
 object PageNumber {
   def apply(asInt: Int): ExceptionOr[PageNumber] =
     asInt match {
-      case p if p >= 0 => Right(new PageNumber(p))
+      case p if p > 0 => Right(new PageNumber(p))
       case badPage     => Left(GenericException(s"Bad confidence value $badPage"))
     }
 
-  val `0`: PageNumber = PageNumber(0).fold(e => throw new AssertionError(e), p => p)
   val `1`: PageNumber = PageNumber(1).fold(e => throw new AssertionError(e), p => p)
   val `2`: PageNumber = PageNumber(2).fold(e => throw new AssertionError(e), p => p)
   val `3`: PageNumber = PageNumber(3).fold(e => throw new AssertionError(e), p => p)
