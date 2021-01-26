@@ -6,6 +6,10 @@ import sttp.client3.SttpBackend
 
 // TODO this isn't working
 object ClearCaches extends MuckingWithDynamoMain {
-  override def runWithDynamo(httpClient: SttpBackend[IO, Any], jobIdCache: FriendlyClient.JobIdCache, friendlyClient: FriendlyClient): IO[Unit] =
+  override def runWithDynamo(
+    httpClient: SttpBackend[IO, Any],
+    jobIdCache: FriendlyClient.JobIdCache,
+    friendlyClient: FriendlyClient,
+  ): IO[Unit] =
     jobIdCache.clear
 }

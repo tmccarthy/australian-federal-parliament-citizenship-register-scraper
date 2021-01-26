@@ -4,7 +4,10 @@ import java.net.URI
 import java.nio.file.{Files, Path}
 import java.time.Duration
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{makeTableIfNoneDefined, waitForTableCreated}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{
+  makeTableIfNoneDefined,
+  waitForTableCreated,
+}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.{RetryEffect, S3Key, toIO}
@@ -293,7 +296,7 @@ object FriendlyClient {
       override def clear: IO[Unit] =
         for {
           deleteTableRequest <- IO.pure(
-            DeleteTableRequest.builder().tableName(tableName).build()
+            DeleteTableRequest.builder().tableName(tableName).build(),
           )
 
           _ <- IO(client.deleteTable(deleteTableRequest))

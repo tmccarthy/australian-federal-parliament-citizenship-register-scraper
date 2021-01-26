@@ -4,7 +4,10 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
+  AncestorDetails,
+  GrandparentDetails,
+}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
@@ -45,9 +48,7 @@ object SenateStatementInRelationToCitizenship {
     object DateOfBirth {
 
       final case class Known(localDate: LocalDate) extends DateOfBirth
-
       final case class YearOnly(year: Year) extends DateOfBirth
-
       case object Unknown extends DateOfBirth
 
     }
@@ -58,7 +59,7 @@ object SenateStatementInRelationToCitizenship {
     for {
       pages <- Right(textractAnalysis.pages)
 
-      resultNavigator = ResultNavigator(textractAnalysis)
+//      resultNavigator = ResultNavigator(textractAnalysis)
 
       page1 <- getOrFail(pages, index = 0)
 
@@ -70,8 +71,6 @@ object SenateStatementInRelationToCitizenship {
         right = (),
         left = GenericException("Couldn't find the title"),
       )
-
-
 
       result <- ExceptionOr.catchIn(???)
     } yield result
