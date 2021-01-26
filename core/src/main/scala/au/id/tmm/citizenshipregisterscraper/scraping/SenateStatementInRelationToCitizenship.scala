@@ -4,14 +4,11 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
-  AncestorDetails,
-  GrandparentDetails,
-}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
 import au.id.tmm.collections.syntax._
-import au.id.tmm.utilities.errors.ExceptionOr
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import au.id.tmm.utilities.errors.syntax._
 
 final case class SenateStatementInRelationToCitizenship(
@@ -75,24 +72,19 @@ object SenateStatementInRelationToCitizenship {
           .onlyElementOrException
           .wrapExceptionWithMessage("Couldn't find the title")
 
-      surnameKey <-
-        page1
-          .searchRecursivelyUsingPredicate[KeyValueSet.Key](BlockPredicates.keyHasWordsLike("Surname"))
-          .onlyElementOrException
-          .wrapExceptionWithMessage("Couldn't find surname")
-
-      surnameValue <- surnameKey.value
-
-      surname = surnameValue.readableText
-
-      _ = println(surname) // TODO remove
+      surname <- getValueFromKey(resultNavigator, PageNumber.`0`, "surname")
+      otherNames <- getValueFromKey(resultNavigator, PageNumber.`0`, "other names")
+      rawState <- getValueFromKey(resultNavigator, PageNumber.`0`, "state")
+      state <- parseStateFrom(rawState)
+      placeOfBirth <- getValueFromKey(resultNavigator, PageNumber.`0`, "place of birth")
+      citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`0`, "citizenship held at birth")
 
       result = SenateStatementInRelationToCitizenship(
         surname,
-        ???,
-        ???,
-        ???,
-        ???,
+        otherNames,
+        state,
+        placeOfBirth,
+        citizenshipAtBirth,
         ???,
         ???,
         ???,
@@ -104,6 +96,35 @@ object SenateStatementInRelationToCitizenship {
         ???,
       )
     } yield result
+  }
+
+  //TODO make this generally available?
+  private def getValueFromKey(
+    navigator: ResultNavigator,
+    page: PageNumber,
+    keyText: String,
+    choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key] = _.onlyElementOrException,
+  ): ExceptionOr[String] = {
+    import navigator.syntax._
+
+    for {
+      candidateKeys <- Right {
+        navigator.searchAllResults[KeyValueSet.Key] {
+          case k: KeyValueSet.Key if k.pageNumber == page && BlockPredicates.keyHasWordsLike(keyText)(k) => k
+        }
+      }
+
+      matchingKey <- choose(candidateKeys)
+        .wrapExceptionWithMessage(s"Failed to choose key for '$keyText' from ${candidateKeys.map(_.readableText).mkString(", ")}")
+
+      matchingValue <- matchingKey.value
+    } yield matchingValue.readableText
+  }
+
+  private def parseStateFrom(rawState: String): ExceptionOr[State] = {
+    val cleanedRawState = rawState.replaceAll("""\W""", "")
+
+    State.fromName(cleanedRawState).orElse(State.fromAbbreviation(cleanedRawState)).toRight(GenericException(s"Couldn't parse a state from $rawState"))
   }
 
 }

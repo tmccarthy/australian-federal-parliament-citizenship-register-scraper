@@ -19,7 +19,7 @@ import scala.collection.mutable
 import scala.reflect.ClassTag
 
 final class ResultNavigator private (
-  analysisResult: AnalysisResult,
+  private val analysisResult: AnalysisResult,
   atomicBlockParents: collection.Map[AtomicBlock, Parent.ForAtomicBlock],
   cellParents: collection.Map[Table.Cell, Table],
   tableParents: collection.Map[Table, Page],
@@ -173,6 +173,9 @@ final class ResultNavigator private (
       BlockIterator.recursivelyIterateBlockAndChildren(block, includeKeyValueSets = true).collect(collect)
     }
 
+  def searchAllResults[B2 <: Block](collect: PartialFunction[Block, B2]): LazyList[B2] =
+    analysisResult.pages.to(LazyList).flatMap(p => recursivelySearchChildrenOf(p)(collect))
+
   val syntax: ResultNavigator.Syntax = new ResultNavigator.Syntax(this)
 
 }
@@ -272,6 +275,15 @@ object ResultNavigator {
   }
 
   final class Syntax private[ResultNavigator] (resultNavigator: ResultNavigator) {
+
+    implicit class AnalysisResultOps(analysisResult: AnalysisResult) {
+      def recursivelySearch[B2 <: Block](collect: PartialFunction[Block, B2]): ExceptionOr[LazyList[B2]] =
+        Either.cond(
+          analysisResult == resultNavigator.analysisResult,
+          resultNavigator.searchAllResults[B2](collect),
+          GenericException("Not the parsed analysis results"),
+        )
+    }
 
     implicit class BlocksOps[B <: Block : ClassTag](blocks: Seq[B]) {
       def searchRecursively[B2 <: Block](collect: PartialFunction[Block, B2]): ExceptionOr[LazyList[B2]] =
