@@ -4,7 +4,10 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
+  AncestorDetails,
+  GrandparentDetails,
+}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
 import au.id.tmm.collections.syntax._
@@ -47,8 +50,8 @@ object SenateStatementInRelationToCitizenship {
     object DateOfBirth {
 
       final case class Known(localDate: LocalDate) extends DateOfBirth
-      final case class YearOnly(year: Year) extends DateOfBirth
-      case object Unknown extends DateOfBirth
+      final case class YearOnly(year: Year)        extends DateOfBirth
+      case object Unknown                          extends DateOfBirth
 
     }
 
@@ -64,15 +67,19 @@ object SenateStatementInRelationToCitizenship {
 
       page1 <- getOrFail(pages, index = 0)
 
-      _ <- page1
-        .searchRecursivelyUsingPredicate[Line](BlockPredicates.lineHasWordsLike("Statement in relation to citizenship"))
-        .onlyElementOrException
-        .wrapExceptionWithMessage("Couldn't find the title")
+      _ <-
+        page1
+          .searchRecursivelyUsingPredicate[Line](
+            BlockPredicates.lineHasWordsLike("Statement in relation to citizenship"),
+          )
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find the title")
 
-      surnameKey <- page1
-        .searchRecursivelyUsingPredicate[KeyValueSet.Key](BlockPredicates.keyHasWordsLike("Surname"))
-        .onlyElementOrException
-        .wrapExceptionWithMessage("Couldn't find surname")
+      surnameKey <-
+        page1
+          .searchRecursivelyUsingPredicate[KeyValueSet.Key](BlockPredicates.keyHasWordsLike("Surname"))
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find surname")
 
       surnameValue <- surnameKey.value
 

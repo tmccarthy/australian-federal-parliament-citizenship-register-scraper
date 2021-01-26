@@ -2,12 +2,9 @@ package au.id.tmm.citizenshipregisterscraper.mainclasses
 
 import au.id.tmm.citizenshipregisterscraper.documents.senate
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient
 import cats.effect.IO
 import sttp.client3.SttpBackend
-
-import scala.collection.immutable.ArraySeq
 
 object TestSenateStatementInRelationToCitizenshipScraping extends MuckingWithDynamoMain {
   protected val abetzDisclosure: IO[senate.DocumentReference] = disclosureForName("Abetz")
@@ -22,13 +19,9 @@ object TestSenateStatementInRelationToCitizenshipScraping extends MuckingWithDyn
 
       analysisResult <- friendlyClient.runAnalysisFor(FriendlyClient.Document.Remote(reference.documentLocation))
 
-      tables = analysisResult.pages.to(ArraySeq).flatMap(_.children).collect {
-        case textract.model.Page.Child.OfTable(table) => table
-      }
+      statement <- IO.fromEither(SenateStatementInRelationToCitizenship.fromTextract(analysisResult))
 
-      _ <- IO(tables.foreach(t => println(t.rows)))
-
-      _ <- IO.fromEither(SenateStatementInRelationToCitizenship.fromTextract(analysisResult))
+      _ <- IO(println(statement))
 
     } yield ()
 }
