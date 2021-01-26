@@ -2,10 +2,14 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.Page.Child
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator.Parent.ForAtomicBlock
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator.Syntax.BlockOps
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator.{NoParentFor, NotFoundInResults, Parent, Siblings}
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException, ProductException}
+import au.id.tmm.utilities.errors.syntax._
 
-import scala.collection.immutable.ArraySeq
+import scala.annotation.tailrec
+import scala.collection.immutable.{ArraySeq, ListSet}
 import scala.collection.mutable
 import scala.reflect.ClassTag
 
@@ -15,8 +19,10 @@ final class ResultNavigator private (
   cellParents: collection.Map[Table.Cell, Table],
   tableParents: collection.Map[Table, Page],
   lineParents: collection.Map[Line, Page],
+  kvSetParents: collection.Map[KeyValueSet, Page],
   tableCellLookup: collection.Map[Table, Map[(Int, Int), Table.Cell]],
   kvSetsForKeys: collection.Map[KeyValueSet.Key, KeyValueSet],
+  kvSetsForValues: collection.Map[KeyValueSet.Value, KeyValueSet],
 ) {
 
   def parentOf(atomicBlock: AtomicBlock): ExceptionOr[Parent.ForAtomicBlock] =
@@ -30,6 +36,15 @@ final class ResultNavigator private (
 
   def parentOf(line: Line): ExceptionOr[Page] =
     lineParents.get(line).toRight(NoParentFor(line))
+
+  def parentOf(keyValueSet: KeyValueSet): ExceptionOr[Page] =
+    kvSetParents.get(keyValueSet).toRight(NoParentFor(keyValueSet.key))
+
+  def parentOf(key: KeyValueSet.Key): ExceptionOr[Page] =
+    kvSetFor(key).flatMap(parentOf)
+
+  def parentOf(value: KeyValueSet.Value): ExceptionOr[Page] =
+    kvSetFor(value).flatMap(parentOf)
 
   def siblingsOf(atomicBlock: AtomicBlock): ExceptionOr[ArraySeq[AtomicBlock]] =
     parentOf(atomicBlock).map {
@@ -57,6 +72,11 @@ final class ResultNavigator private (
         case Page.Child.OfTable(table)                             => Siblings.UnderPage.OfTable(table)
       }
     }
+
+  def siblingsOf(keyValueSet: KeyValueSet): ExceptionOr[ArraySeq[KeyValueSet]] =
+    parentOf(keyValueSet).map(p => p.children.collect {
+      case Page.Child.OfKeyValueSet(kvSet) => kvSet
+    })
 
   def siblingsOf(page: Page): ExceptionOr[ArraySeq[Page]] =
     if (analysisResult.pages.contains(page)) {
@@ -87,12 +107,61 @@ final class ResultNavigator private (
 
   def valueFor(key: KeyValueSet.Key): ExceptionOr[KeyValueSet.Value] = kvSetFor(key).map(_.value)
 
-  def recursivelySearchChildrenOf[B1 <: Block : ClassTag, B2 <: Block](block: Block)(collect: PartialFunction[B1, B2]): LazyList[B2] =
-    LazyList.from {
-      BlockIterator.recursivelyIterateBlockAndChildren(block, includeKeyValueSets = true).collect {
-        case b1: B1 if collect.isDefinedAt(b1) => collect(b1)
+  def kvSetFor(value: KeyValueSet.Value): ExceptionOr[KeyValueSet] =
+    kvSetsForValues.get(value).toRight(NotFoundInResults(value))
+
+  def keyFor(value: KeyValueSet.Value): ExceptionOr[KeyValueSet.Key] = kvSetFor(value).map(_.key)
+
+  private def untypedParentOf(block: Block): ExceptionOr[Option[Block]] = block match {
+    case block: AtomicBlock => parentOf(block).map {
+      case ForAtomicBlock.OfLine(line) => Some(line)
+      case ForAtomicBlock.OfCell(cell) => Some(cell)
+    }
+    case line: Line => parentOf(line).map(Some.apply)
+    case table: Table => parentOf(table).map(Some.apply)
+    case cell: Table.Cell => parentOf(cell).map(Some.apply)
+    case _: Page | _: KeyValueSet.Key | _: KeyValueSet.Value => Right(None)
+  }
+
+  def recursivelySearchChildrenOf[B2 <: Block](blocks: Seq[Block])(collect: PartialFunction[Block, B2]): ExceptionOr[LazyList[B2]] = {
+    def isParent(maybeParent: Block, maybeChild: Block): ExceptionOr[Boolean] = {
+      untypedParentOf(maybeChild).flatMap {
+        case None => Right(false)
+        case Some(parent) =>
+          if (parent == maybeParent) {
+            Right(true)
+          } else {
+            isParent(maybeParent, parent)
+          }
       }
     }
+
+    @tailrec
+    def unsafeRemoveChildBlocks(blocks: Seq[Block], blocksWithoutChildren: ListSet[Block]): ListSet[Block] = {
+      blocks match {
+        case Seq() => blocksWithoutChildren
+        case candidate +: remainingBlocks =>
+          if (blocks.exists(b => isParent(b, candidate).getOrThrow)) {
+            unsafeRemoveChildBlocks(remainingBlocks, blocksWithoutChildren)
+          } else {
+            val blocksToRemove = blocks.filter(b => isParent(candidate, b).getOrThrow).toSet
+
+            unsafeRemoveChildBlocks(remainingBlocks, blocksWithoutChildren.diff(blocksToRemove).incl(candidate))
+          }
+      }
+    }
+
+    for {
+      independentRootBlocks <- ExceptionOr.catchIn(unsafeRemoveChildBlocks(blocks, blocksWithoutChildren = ListSet.empty))
+    } yield independentRootBlocks.to(LazyList).flatMap(b => recursivelySearchChildrenOf[B2](b)(collect))
+  }
+
+  def recursivelySearchChildrenOf[B2 <: Block](block: Block)(collect: PartialFunction[Block, B2]): LazyList[B2] =
+    LazyList.from {
+      BlockIterator.recursivelyIterateBlockAndChildren(block, includeKeyValueSets = true).collect(collect)
+    }
+
+  val syntax: ResultNavigator.Syntax = new ResultNavigator.Syntax(this)
 
 }
 
@@ -144,9 +213,11 @@ object ResultNavigator {
     val cellParents: mutable.Map[Table.Cell, Table] = mutable.Map()
     val tableParents: mutable.Map[Table, Page] = mutable.Map()
     val lineParents: mutable.Map[Line, Page] = mutable.Map()
+    val kvSetParents: mutable.Map[KeyValueSet, Page] = mutable.Map()
 
     val tableCellLookup: mutable.Map[Table, Map[(Int, Int), Table.Cell]] = mutable.Map()
     val kvForKeyLookup: mutable.Map[KeyValueSet.Key, KeyValueSet] = mutable.Map()
+    val kvForValueLookup: mutable.Map[KeyValueSet.Value, KeyValueSet] = mutable.Map()
 
     analysisResult.pages.foreach { page =>
       page.children.foreach {
@@ -168,7 +239,9 @@ object ResultNavigator {
           }
         }
         case Child.OfKeyValueSet(keyValueSet) => {
+          kvSetParents.put(keyValueSet, page)
           kvForKeyLookup.put(keyValueSet.key, keyValueSet)
+          kvForValueLookup.put(keyValueSet.value, keyValueSet)
         }
       }
     }
@@ -179,9 +252,90 @@ object ResultNavigator {
       cellParents,
       tableParents,
       lineParents,
+      kvSetParents,
       tableCellLookup,
       kvForKeyLookup,
+      kvForValueLookup,
     )
+  }
+
+  final class Syntax private[ResultNavigator] (resultNavigator: ResultNavigator) {
+
+    implicit class BlocksOps[B <: Block : ClassTag](blocks: Seq[B]) {
+      def searchRecursively[B2 <: Block](collect: PartialFunction[Block, B2]): ExceptionOr[LazyList[B2]] =
+        resultNavigator.recursivelySearchChildrenOf(blocks)(collect)
+    }
+
+    implicit class KeyOps(key: KeyValueSet.Key) extends BlockOps[KeyValueSet.Key](key, resultNavigator) {
+      def parent: ExceptionOr[Page] = resultNavigator.parentOf(key)
+      def kvSet: ExceptionOr[KeyValueSet] = resultNavigator.kvSetFor(key)
+      def value: ExceptionOr[KeyValueSet.Value] = resultNavigator.valueFor(key)
+    }
+
+    implicit class ValueOps(value: KeyValueSet.Value) extends BlockOps[KeyValueSet.Value](value, resultNavigator) {
+      def parent: ExceptionOr[Page] = resultNavigator.parentOf(value)
+      def kvSet: ExceptionOr[KeyValueSet] = resultNavigator.kvSetFor(value)
+      def key: ExceptionOr[KeyValueSet.Key] = resultNavigator.keyFor(value)
+    }
+
+    implicit class KeyValueSetOps(kvSet: KeyValueSet) {
+      def parent: ExceptionOr[Page] = resultNavigator.parentOf(kvSet)
+      def siblings: ExceptionOr[ArraySeq[KeyValueSet]] = resultNavigator.siblingsOf(kvSet)
+    }
+
+    implicit class AtomicBlockOps(atomicBlock: AtomicBlock) extends BlockOps[AtomicBlock](atomicBlock, resultNavigator) {
+      def parent: ExceptionOr[Parent.ForAtomicBlock] =
+        resultNavigator.parentOf(atomicBlock)
+
+      def siblings: ExceptionOr[ArraySeq[AtomicBlock]] =
+        resultNavigator.siblingsOf(atomicBlock)
+    }
+
+    implicit class CellOps(cell: Table.Cell) extends BlockOps[Table.Cell](cell, resultNavigator) {
+      def parent: ExceptionOr[Table] =
+        resultNavigator.parentOf(cell)
+
+      def siblings: ExceptionOr[ArraySeq[Table.Cell]] =
+        resultNavigator.siblingsOf(cell)
+    }
+
+    implicit class TableOps(table: Table) extends BlockOps[Table](table, resultNavigator) {
+      def parent: ExceptionOr[Page] =
+        resultNavigator.parentOf(table)
+
+      def siblings: ExceptionOr[ArraySeq[Siblings.UnderPage]] =
+        resultNavigator.siblingsOf(table)
+
+      def findCell(columnIndex: Int, rowIndex: Int): ExceptionOr[Table.Cell] =
+        resultNavigator.findCell(table, columnIndex, rowIndex)
+    }
+
+    implicit class LineOps(line: Line) extends BlockOps[Line](line, resultNavigator) {
+      def parent: ExceptionOr[Page] =
+        resultNavigator.parentOf(line)
+
+      def siblings: ExceptionOr[ArraySeq[Siblings.UnderPage]] =
+        resultNavigator.siblingsOf(line)
+    }
+
+    implicit class PageOps(page: Page) extends BlockOps[Page](page, resultNavigator) {
+      def siblings: ExceptionOr[ArraySeq[Page]] = resultNavigator.siblingsOf(page)
+    }
+
+  }
+
+  object Syntax {
+
+    abstract class BlockOps[B <: Block : ClassTag] private[Syntax] (block: B, resultNavigator: ResultNavigator) {
+      def searchRecursively[B2 <: Block](collect: PartialFunction[Block, B2]): LazyList[B2] =
+        resultNavigator.recursivelySearchChildrenOf[B2](block)(collect)
+
+      def searchRecursivelyUsingPredicate[B2 <: Block : ClassTag](predicate: B2 => Boolean): LazyList[B2] =
+        resultNavigator.recursivelySearchChildrenOf[B2](block) {
+          case b2: B2 if predicate(b2) => b2
+        }
+    }
+
   }
 
 }

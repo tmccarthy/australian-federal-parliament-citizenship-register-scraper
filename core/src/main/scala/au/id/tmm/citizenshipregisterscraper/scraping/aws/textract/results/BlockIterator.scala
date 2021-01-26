@@ -13,22 +13,22 @@ object BlockIterator {
   def recursivelyIterateChildrenOf(block: Block, includeKeyValueSets: Boolean = false): Iterator[Block] =
     block match {
       case block: AtomicBlock => Iterator.empty[Block]
-      case line: Line         => line.children.flatMap(c => recursivelyIterateBlockAndChildren(c)).iterator
+      case line: Line         => line.children.flatMap(c => recursivelyIterateBlockAndChildren(c, includeKeyValueSets)).iterator
       case page: Page =>
         page.children.flatMap {
-          case Page.Child.OfLine(line)   => recursivelyIterateBlockAndChildren(line)
-          case Page.Child.OfTable(table) => recursivelyIterateBlockAndChildren(table)
+          case Page.Child.OfLine(line)   => recursivelyIterateBlockAndChildren(line, includeKeyValueSets)
+          case Page.Child.OfTable(table) => recursivelyIterateBlockAndChildren(table, includeKeyValueSets)
           case Page.Child.OfKeyValueSet(keyValueSet) =>
             if (includeKeyValueSets) {
-              recursivelyIterateBlockAndChildren(keyValueSet.key) ++ recursivelyIterateBlockAndChildren(keyValueSet.value)
+              recursivelyIterateBlockAndChildren(keyValueSet.key, includeKeyValueSets) ++ recursivelyIterateBlockAndChildren(keyValueSet.value, includeKeyValueSets)
             } else {
               Iterator.empty
             }
         }.iterator
-      case table: Table             => table.children.flatMap(c => recursivelyIterateBlockAndChildren(c)).iterator
-      case cell: Table.Cell         => cell.children.flatMap(c => recursivelyIterateBlockAndChildren(c)).iterator
-      case key: KeyValueSet.Key     => key.children.flatMap(c => recursivelyIterateBlockAndChildren(c)).iterator
-      case value: KeyValueSet.Value => value.children.flatMap(c => recursivelyIterateBlockAndChildren(c)).iterator
+      case table: Table             => table.children.flatMap(c => recursivelyIterateBlockAndChildren(c, includeKeyValueSets)).iterator
+      case cell: Table.Cell         => cell.children.flatMap(c => recursivelyIterateBlockAndChildren(c, includeKeyValueSets)).iterator
+      case key: KeyValueSet.Key     => key.children.flatMap(c => recursivelyIterateBlockAndChildren(c, includeKeyValueSets)).iterator
+      case value: KeyValueSet.Value => value.children.flatMap(c => recursivelyIterateBlockAndChildren(c, includeKeyValueSets)).iterator
     }
 
 }

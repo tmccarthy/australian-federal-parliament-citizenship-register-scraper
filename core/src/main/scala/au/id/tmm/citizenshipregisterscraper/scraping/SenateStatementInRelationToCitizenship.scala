@@ -4,13 +4,12 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
-  AncestorDetails,
-  GrandparentDetails,
-}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.ResultNavigator
-import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
+import au.id.tmm.collections.syntax._
+import au.id.tmm.utilities.errors.ExceptionOr
+import au.id.tmm.utilities.errors.syntax._
 
 final case class SenateStatementInRelationToCitizenship(
   surname: String,
@@ -55,24 +54,49 @@ object SenateStatementInRelationToCitizenship {
 
   }
 
-  def fromTextract(textractAnalysis: AnalysisResult): ExceptionOr[SenateStatementInRelationToCitizenship] =
+  def fromTextract(textractAnalysis: AnalysisResult): ExceptionOr[SenateStatementInRelationToCitizenship] = {
+    val resultNavigator = ResultNavigator(textractAnalysis)
+
+    import resultNavigator.syntax._
+
     for {
       pages <- Right(textractAnalysis.pages)
 
-//      resultNavigator = ResultNavigator(textractAnalysis)
-
       page1 <- getOrFail(pages, index = 0)
 
-      _ <- Either.cond(
-        test = hasBlocksMatching[Line](
-          rootBlock = page1,
-          predicate = hasWordsLike("Statement in relation to citizenship", _),
-        ),
-        right = (),
-        left = GenericException("Couldn't find the title"),
-      )
+      _ <- page1
+        .searchRecursivelyUsingPredicate[Line](BlockPredicates.lineHasWordsLike("Statement in relation to citizenship"))
+        .onlyElementOrException
+        .wrapExceptionWithMessage("Couldn't find the title")
 
-      result <- ExceptionOr.catchIn(???)
+      surnameKey <- page1
+        .searchRecursivelyUsingPredicate[KeyValueSet.Key](BlockPredicates.keyHasWordsLike("Surname"))
+        .onlyElementOrException
+        .wrapExceptionWithMessage("Couldn't find surname")
+
+      surnameValue <- surnameKey.value
+
+      surname = surnameValue.readableText
+
+      _ = println(surname) // TODO remove
+
+      result = SenateStatementInRelationToCitizenship(
+        surname,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+        ???,
+      )
     } yield result
+  }
 
 }
