@@ -7,7 +7,7 @@ trait GeometricOrdering extends Ordering[Block] {
 
   protected def score(block: Block): Double
 
-  final override def compare(x: Block, y: Block): Int = Ordering.Double.TotalOrdering.compare(score(x), score(y))
+  override final def compare(x: Block, y: Block): Int = Ordering.Double.TotalOrdering.compare(score(x), score(y))
 
 }
 
@@ -21,7 +21,7 @@ object GeometricOrdering {
   sealed trait PageSide
 
   object PageSide {
-    case object Top extends PageSide
+    case object Top  extends PageSide
     case object Left extends PageSide
   }
 
@@ -34,9 +34,9 @@ object GeometricOrdering {
   sealed abstract class PageCorner(val point: Point)
 
   object PageCorner {
-    case object TopLeft extends PageCorner(Point(0, 0).getOrElse(throw new AssertionError()))
-    case object TopRight extends PageCorner(Point(1, 0).getOrElse(throw new AssertionError()))
-    case object BottomLeft extends PageCorner(Point(0, 1).getOrElse(throw new AssertionError()))
+    case object TopLeft     extends PageCorner(Point(0, 0).getOrElse(throw new AssertionError()))
+    case object TopRight    extends PageCorner(Point(1, 0).getOrElse(throw new AssertionError()))
+    case object BottomLeft  extends PageCorner(Point(0, 1).getOrElse(throw new AssertionError()))
     case object BottomRight extends PageCorner(Point(1, 1).getOrElse(throw new AssertionError()))
   }
 

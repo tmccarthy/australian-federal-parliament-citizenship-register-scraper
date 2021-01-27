@@ -27,10 +27,11 @@ object Geometry {
   ) {
     def bottom: Float = top + height
     def right: Float = left + width
-    def centre: Point = Point(top + (height / 2f), left + (width / 2)) match {
-      case Right(p) => p
-      case Left(e) => throw new AssertionError(e)
-    }
+    def centre: Point =
+      Point(top + (height / 2f), left + (width / 2)) match {
+        case Right(p) => p
+        case Left(e)  => throw new AssertionError(e)
+      }
   }
 
   object BoundingBox {

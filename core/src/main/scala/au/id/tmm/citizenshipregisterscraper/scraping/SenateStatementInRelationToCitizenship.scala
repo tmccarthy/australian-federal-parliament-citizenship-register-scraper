@@ -5,7 +5,10 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
+  AncestorDetails,
+  GrandparentDetails,
+}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
@@ -74,14 +77,15 @@ object SenateStatementInRelationToCitizenship {
           .onlyElementOrException
           .wrapExceptionWithMessage("Couldn't find the title")
 
-      surname <- getValueFromKey(resultNavigator, PageNumber.`1`, "surname")
-      otherNames <- getValueFromKey(resultNavigator, PageNumber.`1`, "other names")
-      state <- getValueFromKey(resultNavigator, PageNumber.`1`, "state").flatMap(parseStateFrom)
-      placeOfBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
+      surname            <- getValueFromKey(resultNavigator, PageNumber.`1`, "surname")
+      otherNames         <- getValueFromKey(resultNavigator, PageNumber.`1`, "other names")
+      state              <- getValueFromKey(resultNavigator, PageNumber.`1`, "state").flatMap(parseStateFrom)
+      placeOfBirth       <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
       citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "citizenship held at birth")
 
       dateOfBirth <- extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of birth")
-      dateOfAustralianNaturalisation <- extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
+      dateOfAustralianNaturalisation <-
+        extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
 
       result = SenateStatementInRelationToCitizenship(
         surname,
@@ -102,9 +106,11 @@ object SenateStatementInRelationToCitizenship {
     } yield result
   }
 
-
-
-  private def extractDateOfBirthUnderHeading(resultNavigator: ResultNavigator, page: PageNumber, heading: String): ExceptionOr[LocalDate] =
+  private def extractDateOfBirthUnderHeading(
+    resultNavigator: ResultNavigator,
+    page: PageNumber,
+    heading: String,
+  ): ExceptionOr[LocalDate] =
     for {
       heading <-
         resultNavigator
@@ -115,14 +121,15 @@ object SenateStatementInRelationToCitizenship {
           .headOption
           .toRight(GenericException(s"No heading: '$heading'"))
 
-      dateOfBirthDay <-
-        getValueFromKey(resultNavigator, page, "day", _.sorted(byDistanceFrom(heading)).headOrException)
+      dateOfBirthDay <- getValueFromKey(resultNavigator, page, "day", _.sorted(byDistanceFrom(heading)).headOrException)
       dateOfBirthMonth <-
         getValueFromKey(resultNavigator, page, "month", _.sorted(byDistanceFrom(heading)).headOrException)
       dateOfBirthYear <-
         getValueFromKey(resultNavigator, page, "year", _.sorted(byDistanceFrom(heading)).headOrException)
 
-      dateOfBirth <- ExceptionOr.catchIn(LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")))
+      dateOfBirth <- ExceptionOr.catchIn(
+        LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
+      )
     } yield dateOfBirth
 
   //TODO make this generally available?
@@ -142,7 +149,9 @@ object SenateStatementInRelationToCitizenship {
       }
 
       matchingKey <- choose(candidateKeys)
-        .wrapExceptionWithMessage(s"Failed to choose key for '$keyText' from ${candidateKeys.map(_.readableText).mkString(", ")}")
+        .wrapExceptionWithMessage(
+          s"Failed to choose key for '$keyText' from ${candidateKeys.map(_.readableText).mkString(", ")}",
+        )
 
       matchingValue <- matchingKey.value
     } yield matchingValue.readableText
@@ -151,7 +160,10 @@ object SenateStatementInRelationToCitizenship {
   private def parseStateFrom(rawState: String): ExceptionOr[State] = {
     val cleanedRawState = rawState.replaceAll("""\W""", "")
 
-    State.fromName(cleanedRawState).orElse(State.fromAbbreviation(cleanedRawState)).toRight(GenericException(s"Couldn't parse a state from $rawState"))
+    State
+      .fromName(cleanedRawState)
+      .orElse(State.fromAbbreviation(cleanedRawState))
+      .toRight(GenericException(s"Couldn't parse a state from $rawState"))
   }
 
 }

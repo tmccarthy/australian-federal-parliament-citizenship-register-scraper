@@ -8,7 +8,7 @@ object PageNumber {
   def apply(asInt: Int): ExceptionOr[PageNumber] =
     asInt match {
       case p if p > 0 => Right(new PageNumber(p))
-      case badPage     => Left(GenericException(s"Bad confidence value $badPage"))
+      case badPage    => Left(GenericException(s"Bad confidence value $badPage"))
     }
 
   val `1`: PageNumber = PageNumber(1).fold(e => throw new AssertionError(e), p => p)
