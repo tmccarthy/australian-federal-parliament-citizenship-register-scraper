@@ -83,9 +83,9 @@ object SenateStatementInRelationToCitizenship {
       placeOfBirth       <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
       citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "citizenship held at birth")
 
-      dateOfBirth <- extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of birth")
+      dateOfBirth <- extractDateUnderHeading(resultNavigator, PageNumber.`1`, "date of birth")
       dateOfAustralianNaturalisation <-
-        extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
+        extractDateUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
 
       result = SenateStatementInRelationToCitizenship(
         surname,
@@ -105,32 +105,6 @@ object SenateStatementInRelationToCitizenship {
       )
     } yield result
   }
-
-  private def extractDateOfBirthUnderHeading(
-    resultNavigator: ResultNavigator,
-    page: PageNumber,
-    heading: String,
-  ): ExceptionOr[LocalDate] =
-    for {
-      heading <-
-        resultNavigator
-          .searchAllResults[Line] {
-            case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
-          }
-          .sorted(byDistanceFrom(PageSide.Top))
-          .headOption
-          .toRight(GenericException(s"No heading: '$heading'"))
-
-      dateOfBirthDay <- getValueFromKey(resultNavigator, page, "day", _.sorted(byDistanceFrom(heading)).headOrException)
-      dateOfBirthMonth <-
-        getValueFromKey(resultNavigator, page, "month", _.sorted(byDistanceFrom(heading)).headOrException)
-      dateOfBirthYear <-
-        getValueFromKey(resultNavigator, page, "year", _.sorted(byDistanceFrom(heading)).headOrException)
-
-      dateOfBirth <- ExceptionOr.catchIn(
-        LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
-      )
-    } yield dateOfBirth
 
   //TODO make this generally available?
   private def getValueFromKey(
@@ -165,5 +139,41 @@ object SenateStatementInRelationToCitizenship {
       .orElse(State.fromAbbreviation(cleanedRawState))
       .toRight(GenericException(s"Couldn't parse a state from $rawState"))
   }
+
+  private def extractDateUnderHeading(
+    resultNavigator: ResultNavigator,
+    page: PageNumber,
+    heading: String,
+  ): ExceptionOr[LocalDate] =
+    for {
+      heading <-
+        resultNavigator
+          .searchAllResults[Line] {
+            case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
+          }
+          .sorted(byDistanceFrom(PageSide.Top))
+          .headOption
+          .toRight(GenericException(s"No heading: '$heading'"))
+
+      date <- extractDate(resultNavigator, page, _.sorted(byDistanceFrom(heading)).headOrException)
+    } yield date
+
+  private def extractDate(
+    resultNavigator: ResultNavigator,
+    page: PageNumber,
+    choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key] = _.onlyElementOrException,
+  ): ExceptionOr[LocalDate] =
+    for {
+      dateOfBirthDay <-
+        getValueFromKey(resultNavigator, page, "day", choose)
+      dateOfBirthMonth <-
+        getValueFromKey(resultNavigator, page, "month", choose)
+      dateOfBirthYear <-
+        getValueFromKey(resultNavigator, page, "year", choose)
+
+      date <- ExceptionOr.catchIn(
+        LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
+      )
+    } yield date
 
 }
