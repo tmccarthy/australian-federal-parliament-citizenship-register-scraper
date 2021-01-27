@@ -1,5 +1,6 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model
 
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.Geometry.Polygon.Point
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 
 import scala.collection.immutable.ArraySeq
@@ -23,7 +24,14 @@ object Geometry {
     top: Float,
     height: Float,
     width: Float,
-  )
+  ) {
+    def bottom: Float = top + height
+    def right: Float = left + width
+    def centre: Point = Point(top + (height / 2f), left + (width / 2)) match {
+      case Right(p) => p
+      case Left(e) => throw new AssertionError(e)
+    }
+  }
 
   object BoundingBox {
     def apply(

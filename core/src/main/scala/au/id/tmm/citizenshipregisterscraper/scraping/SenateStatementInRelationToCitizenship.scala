@@ -1,15 +1,17 @@
 package au.id.tmm.citizenshipregisterscraper.scraping
 
+import java.time.format.DateTimeFormatter
 import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{AncestorDetails, GrandparentDetails}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
-import au.id.tmm.collections.syntax._
-import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
+import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.syntax._
+import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 
 final case class SenateStatementInRelationToCitizenship(
   surname: String,
@@ -78,14 +80,17 @@ object SenateStatementInRelationToCitizenship {
       placeOfBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
       citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "citizenship held at birth")
 
+      dateOfBirth <- extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of birth")
+      dateOfAustralianNaturalisation <- extractDateOfBirthUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
+
       result = SenateStatementInRelationToCitizenship(
         surname,
         otherNames,
         state,
         placeOfBirth,
         citizenshipAtBirth,
-        ???,
-        ???,
+        dateOfBirth,
+        Some(dateOfAustralianNaturalisation), // TODO need to support this being absent
         ???,
         ???,
         ???,
@@ -96,6 +101,29 @@ object SenateStatementInRelationToCitizenship {
       )
     } yield result
   }
+
+
+
+  private def extractDateOfBirthUnderHeading(resultNavigator: ResultNavigator, page: PageNumber, heading: String): ExceptionOr[LocalDate] =
+    for {
+      heading <-
+        resultNavigator
+          .searchAllResults[Line] {
+            case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
+          }
+          .sorted(byDistanceFrom(PageSide.Top))
+          .headOption
+          .toRight(GenericException(s"No heading: '$heading'"))
+
+      dateOfBirthDay <-
+        getValueFromKey(resultNavigator, page, "day", _.sorted(byDistanceFrom(heading)).headOrException)
+      dateOfBirthMonth <-
+        getValueFromKey(resultNavigator, page, "month", _.sorted(byDistanceFrom(heading)).headOrException)
+      dateOfBirthYear <-
+        getValueFromKey(resultNavigator, page, "year", _.sorted(byDistanceFrom(heading)).headOrException)
+
+      dateOfBirth <- ExceptionOr.catchIn(LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")))
+    } yield dateOfBirth
 
   //TODO make this generally available?
   private def getValueFromKey(

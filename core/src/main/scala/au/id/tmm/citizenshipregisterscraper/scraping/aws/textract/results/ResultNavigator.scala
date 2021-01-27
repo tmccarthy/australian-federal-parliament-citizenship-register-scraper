@@ -245,13 +245,16 @@ object ResultNavigator {
         }
         case Child.OfTable(table) => {
           tableParents.put(table, page)
+          val cellLookupBuilder = Map.newBuilder[(Int, Int), Table.Cell]
           table.children.foreach { cell =>
             val cellAsAtomicBlockParent = Parent.ForAtomicBlock.OfCell(cell)
             cellParents.put(cell, table)
             cell.children.foreach { atomicBlock =>
               atomicBlockParents.put(atomicBlock, cellAsAtomicBlockParent)
             }
+            cellLookupBuilder.addOne((cell.columnIndex, cell.rowIndex), cell)
           }
+          tableCellLookup.addOne(table -> cellLookupBuilder.result())
         }
         case Child.OfKeyValueSet(keyValueSet) => {
           kvSetParents.put(keyValueSet, page)

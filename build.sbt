@@ -12,7 +12,7 @@ lazy val root = project
     core,
   )
 
-val tmmCollectionsVersion = "0.0.4"
+val tmmCollectionsVersion = "0.0.5"
 val tmmUtilsVersion = "0.6.2"
 
 lazy val core = project
