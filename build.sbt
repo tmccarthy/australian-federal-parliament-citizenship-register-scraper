@@ -20,6 +20,7 @@ lazy val core = project
   .settings(settingsHelper.settingsForSubprojectCalled("core"))
   .settings(
     libraryDependencies += "org.typelevel"                   %% "cats-effect"                    % "2.2.0",
+    libraryDependencies += "co.fs2"                          %% "fs2-core"                       % "2.5.0",
     libraryDependencies += "au.id.tmm.ausgeo"                %% "ausgeo-core"                    % "0.2.6",
     libraryDependencies += "au.id.tmm.digest4s"              %% "digest4s-core"                  % "0.0.1",
     libraryDependencies += "au.id.tmm.tmm-scala-collections" %% "tmm-scala-collections-core"     % tmmCollectionsVersion,

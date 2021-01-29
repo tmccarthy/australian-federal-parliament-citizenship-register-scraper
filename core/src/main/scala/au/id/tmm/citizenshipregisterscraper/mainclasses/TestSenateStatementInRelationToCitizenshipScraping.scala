@@ -7,7 +7,7 @@ import cats.effect.IO
 import sttp.client3.SttpBackend
 
 object TestSenateStatementInRelationToCitizenshipScraping extends MuckingWithDynamoMain {
-  protected val abetzDisclosure: IO[senate.DocumentReference] = disclosureForName("Abetz")
+  protected val abetzDisclosure: IO[senate.DocumentReference] = disclosureForName("Askew")
 
   override def runWithDynamo(
     httpClient: SttpBackend[IO, Any],
