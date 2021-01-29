@@ -22,8 +22,8 @@ final case class SenateStatementInRelationToCitizenship(
   dateOfBirth: LocalDate,
   dateOfAustralianNaturalisation: Option[LocalDate],
   parents: ParentalCoupleDetails,
-//  maternalGrandparents: ParentalCoupleDetails,
-//  paternalGrandparents: ParentalCoupleDetails,
+  maternalGrandparents: ParentalCoupleDetails,
+  paternalGrandparents: ParentalCoupleDetails,
 //  otherFactors: String,
 //  stepsTakenToAssureCitizenshipNotInherited: String,
 //  everBeenForeignCitizen: Boolean,
@@ -99,6 +99,40 @@ object SenateStatementInRelationToCitizenship {
 
       parentsDetails <- parseParentalCoupleDetails(resultNavigator, parentsTable)
 
+      page2 <- getOrFail(pages, index = 1)
+
+      headingForGrandparentsTables <-
+        page2
+          .searchRecursivelyUsingPredicate[Line](
+            BlockPredicates.lineHasWordsLike("grandparents birth details"),
+          )
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find heading for grandparents details")
+
+      headingForOtherFactors <-
+        page2
+          .searchRecursivelyUsingPredicate[Line](
+            BlockPredicates.lineHasWordsLike("factors that may be relevant"),
+          )
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find other factors heading")
+
+      grandparentTables =
+        page2
+          .searchRecursivelyUsingPredicate[Table](
+            BlockPredicates.between(headingForGrandparentsTables, headingForOtherFactors),
+          )
+          .sorted(byDistanceFrom(PageSide.Top))
+          .toList
+
+      (maternalTable, paternalTable) <- grandparentTables match {
+        case maternalTable :: paternalTable :: Nil => Right((maternalTable, paternalTable))
+        case badListOfTables                       => Left(GenericException(s"Expected 2 tables but found ${badListOfTables}"))
+      }
+
+      maternalGrandparentsDetails <- parseParentalCoupleDetails(resultNavigator, maternalTable)
+      paternalGrandparentsDetails <- parseParentalCoupleDetails(resultNavigator, paternalTable)
+
       result = SenateStatementInRelationToCitizenship(
         surname,
         otherNames,
@@ -108,6 +142,8 @@ object SenateStatementInRelationToCitizenship {
         dateOfBirth,
         Some(dateOfAustralianNaturalisation), // TODO need to support this being absent
         parentsDetails,
+        maternalGrandparentsDetails,
+        paternalGrandparentsDetails,
       )
     } yield result
   }
@@ -168,16 +204,19 @@ object SenateStatementInRelationToCitizenship {
     resultNavigator: ResultNavigator,
     page: PageNumber,
     choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key],
-  ): ExceptionOr[LocalDate] =
+  ): ExceptionOr[LocalDate] = {
+    def cleanRawDatePart(raw: String): String = raw.replaceAll("\\D", "")
+
     for {
-      dateOfBirthDay   <- getValueFromKey(resultNavigator, page, "day", choose)
-      dateOfBirthMonth <- getValueFromKey(resultNavigator, page, "month", choose)
-      dateOfBirthYear  <- getValueFromKey(resultNavigator, page, "year", choose)
+      dateOfBirthDay   <- getValueFromKey(resultNavigator, page, "day", choose).map(cleanRawDatePart)
+      dateOfBirthMonth <- getValueFromKey(resultNavigator, page, "month", choose).map(cleanRawDatePart)
+      dateOfBirthYear  <- getValueFromKey(resultNavigator, page, "year", choose).map(cleanRawDatePart)
 
       date <- ExceptionOr.catchIn(
         LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
       )
     } yield date
+  }
 
   private def parseParentalCoupleDetails(
     resultNavigator: ResultNavigator,
@@ -208,7 +247,7 @@ object SenateStatementInRelationToCitizenship {
     } yield ParentalCoupleDetails(
       mother = AncestorDetails(
         femalePlaceOfBirth,
-        AncestorDetails.DateOfBirth.Known(femaleDateOfBirth),
+        AncestorDetails.DateOfBirth.Known(femaleDateOfBirth), // TODO support the other forms
       ),
       father = AncestorDetails(
         malePlaceOfBirth,
