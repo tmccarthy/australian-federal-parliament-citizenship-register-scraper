@@ -5,10 +5,7 @@ import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
-import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.{
-  AncestorDetails,
-  GrandparentDetails,
-}
+import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.ParentalCoupleDetails
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
@@ -24,20 +21,19 @@ final case class SenateStatementInRelationToCitizenship(
   citizenshipHeldAtBirth: String,
   dateOfBirth: LocalDate,
   dateOfAustralianNaturalisation: Option[LocalDate],
-  motherDetails: AncestorDetails,
-  fatherDetails: AncestorDetails,
-  maternal: GrandparentDetails,
-  paternal: GrandparentDetails,
-  otherFactors: String,
-  stepsTakenToAssureCitizenshipNotInherited: String,
-  everBeenForeignCitizen: Boolean,
+  parents: ParentalCoupleDetails,
+//  maternalGrandparents: ParentalCoupleDetails,
+//  paternalGrandparents: ParentalCoupleDetails,
+//  otherFactors: String,
+//  stepsTakenToAssureCitizenshipNotInherited: String,
+//  everBeenForeignCitizen: Boolean,
 )
 
 object SenateStatementInRelationToCitizenship {
 
-  final case class GrandparentDetails(
-    grandmother: AncestorDetails,
-    grandfather: AncestorDetails,
+  final case class ParentalCoupleDetails(
+    mother: AncestorDetails,
+    father: AncestorDetails,
   )
 
   final case class AncestorDetails(
@@ -87,6 +83,22 @@ object SenateStatementInRelationToCitizenship {
       dateOfAustralianNaturalisation <-
         extractDateUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
 
+      headingForParentsTable <-
+        page1
+          .searchRecursivelyUsingPredicate[Line](
+            BlockPredicates.lineHasWordsLike("section 3a-senators parents birth details"),
+          )
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find heading for parents details")
+
+      parentsTable <-
+        page1
+          .searchRecursivelyUsingPredicate[Table](BlockPredicates.beneath(headingForParentsTable))
+          .onlyElementOrException
+          .wrapExceptionWithMessage("Couldn't find parents details table")
+
+      parentsDetails <- parseParentalCoupleDetails(resultNavigator, parentsTable)
+
       result = SenateStatementInRelationToCitizenship(
         surname,
         otherNames,
@@ -95,13 +107,7 @@ object SenateStatementInRelationToCitizenship {
         citizenshipAtBirth,
         dateOfBirth,
         Some(dateOfAustralianNaturalisation), // TODO need to support this being absent
-        ???,
-        ???,
-        ???,
-        ???,
-        ???,
-        ???,
-        ???,
+        parentsDetails,
       )
     } yield result
   }
@@ -161,19 +167,54 @@ object SenateStatementInRelationToCitizenship {
   private def extractDate(
     resultNavigator: ResultNavigator,
     page: PageNumber,
-    choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key] = _.onlyElementOrException,
+    choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key],
   ): ExceptionOr[LocalDate] =
     for {
-      dateOfBirthDay <-
-        getValueFromKey(resultNavigator, page, "day", choose)
-      dateOfBirthMonth <-
-        getValueFromKey(resultNavigator, page, "month", choose)
-      dateOfBirthYear <-
-        getValueFromKey(resultNavigator, page, "year", choose)
+      dateOfBirthDay   <- getValueFromKey(resultNavigator, page, "day", choose)
+      dateOfBirthMonth <- getValueFromKey(resultNavigator, page, "month", choose)
+      dateOfBirthYear  <- getValueFromKey(resultNavigator, page, "year", choose)
 
       date <- ExceptionOr.catchIn(
         LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
       )
     } yield date
+
+  private def parseParentalCoupleDetails(
+    resultNavigator: ResultNavigator,
+    table: Table,
+  ): ExceptionOr[ParentalCoupleDetails] = {
+    import resultNavigator.syntax._
+
+    for {
+      femalePlaceOfBirthCell <- table.findCell(2, 2)
+      femaleDateOfBirthCell  <- table.findCell(2, 3)
+
+      femaleDateOfBirth <- extractDate(
+        resultNavigator,
+        femaleDateOfBirthCell.pageNumber,
+        keys => keys.filter(BlockPredicates.within(femaleDateOfBirthCell)).onlyElementOrException,
+      )
+      femalePlaceOfBirth = femalePlaceOfBirthCell.readableText
+
+      malePlaceOfBirthCell <- table.findCell(3, 2)
+      maleDateOfBirthCell  <- table.findCell(3, 3)
+
+      maleDateOfBirth <- extractDate(
+        resultNavigator,
+        maleDateOfBirthCell.pageNumber,
+        keys => keys.filter(BlockPredicates.within(maleDateOfBirthCell)).onlyElementOrException,
+      )
+      malePlaceOfBirth = malePlaceOfBirthCell.readableText
+    } yield ParentalCoupleDetails(
+      mother = AncestorDetails(
+        femalePlaceOfBirth,
+        AncestorDetails.DateOfBirth.Known(femaleDateOfBirth),
+      ),
+      father = AncestorDetails(
+        malePlaceOfBirth,
+        AncestorDetails.DateOfBirth.Known(maleDateOfBirth),
+      ),
+    )
+  }
 
 }

@@ -13,15 +13,37 @@ object BlockPredicates {
     hasWordsLike(searchText, value.children)
 
   def hasWordsLike(searchText: String, atomicBlocks: ArraySeq[AtomicBlock]): Boolean = {
-    val blockWords = atomicBlocks.flatMap {
+    val blockWords: ArraySeq[String] = atomicBlocks.flatMap {
       case _: SelectionElement => ArraySeq.empty
       case w: Word             => reduceToSimpleTextArray(w.text)
     }
 
-    blockWords.containsSlice(reduceToSimpleTextArray(searchText))
+    val searchWords: ArraySeq[String] = reduceToSimpleTextArray(searchText)
+
+    blockWords.containsSlice(searchWords)
   }
 
   private def reduceToSimpleTextArray(string: String): ArraySeq[String] =
     ArraySeq.unsafeWrapArray(string.toLowerCase.replaceAll("""[^\w\s]""", "").split("""\s+"""))
+
+  def beneath(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.lteq(referenceBlock, block)
+
+  def above(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.gteq(referenceBlock, block)
+
+  def between(referenceBlock1: Block, referenceBlock2: Block)(block: Block): Boolean =
+    if (DocumentDistanceOrdering.lteq(referenceBlock1, referenceBlock2)) {
+      beneath(referenceBlock1)(block) && above(referenceBlock2)(block)
+    } else if (DocumentDistanceOrdering.gteq(referenceBlock1, referenceBlock2)) {
+      beneath(referenceBlock2)(block) && above(referenceBlock1)(block)
+    } else {
+      false
+    }
+
+  def within(enclosingBlock: Block)(block: Block): Boolean =
+    enclosingBlock.pageNumber == block.pageNumber &&
+      enclosingBlock.geometry.boundingBox.top <= block.geometry.boundingBox.top &&
+      enclosingBlock.geometry.boundingBox.left <= block.geometry.boundingBox.left &&
+      enclosingBlock.geometry.boundingBox.right >= block.geometry.boundingBox.right &&
+      enclosingBlock.geometry.boundingBox.bottom >= block.geometry.boundingBox.bottom
 
 }
