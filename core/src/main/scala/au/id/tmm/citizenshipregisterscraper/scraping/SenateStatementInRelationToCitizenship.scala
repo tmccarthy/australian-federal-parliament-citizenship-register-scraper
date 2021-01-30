@@ -7,8 +7,10 @@ import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.ParentalCoupleDetails
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.BlockPredicates
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering._
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ResultNavigator}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index.syntax._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index.{AnalysisResultIndex, Searches}
 import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.syntax._
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
@@ -56,9 +58,7 @@ object SenateStatementInRelationToCitizenship {
   }
 
   def fromTextract(textractAnalysis: AnalysisResult): ExceptionOr[SenateStatementInRelationToCitizenship] = {
-    val resultNavigator = ResultNavigator(textractAnalysis)
-
-    import resultNavigator.syntax._
+    implicit val index: AnalysisResultIndex = AnalysisResultIndex(textractAnalysis)
 
     for {
       pages <- Right(textractAnalysis.pages)
@@ -67,25 +67,25 @@ object SenateStatementInRelationToCitizenship {
 
       _ <-
         page1
-          .searchRecursivelyUsingPredicate[Line](
+          .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("Statement in relation to citizenship"),
           )
           .onlyElementOrException
           .wrapExceptionWithMessage("Couldn't find the title")
 
-      surname            <- getValueFromKey(resultNavigator, PageNumber.`1`, "surname")
-      otherNames         <- getValueFromKey(resultNavigator, PageNumber.`1`, "other names")
-      state              <- getValueFromKey(resultNavigator, PageNumber.`1`, "state").flatMap(parseStateFrom)
-      placeOfBirth       <- getValueFromKey(resultNavigator, PageNumber.`1`, "place of birth")
-      citizenshipAtBirth <- getValueFromKey(resultNavigator, PageNumber.`1`, "citizenship held at birth")
+      surname            <- getValueFromKey(PageNumber.`1`, "surname")
+      otherNames         <- getValueFromKey(PageNumber.`1`, "other names")
+      state              <- getValueFromKey(PageNumber.`1`, "state").flatMap(parseStateFrom)
+      placeOfBirth       <- getValueFromKey(PageNumber.`1`, "place of birth")
+      citizenshipAtBirth <- getValueFromKey(PageNumber.`1`, "citizenship held at birth")
 
-      dateOfBirth <- extractDateUnderHeading(resultNavigator, PageNumber.`1`, "date of birth")
+      dateOfBirth <- extractDateUnderHeading(PageNumber.`1`, "date of birth")
       dateOfAustralianNaturalisation <-
-        extractDateUnderHeading(resultNavigator, PageNumber.`1`, "date of australian naturalisation")
+        extractDateUnderHeading(PageNumber.`1`, "date of australian naturalisation")
 
       headingForParentsTable <-
         page1
-          .searchRecursivelyUsingPredicate[Line](
+          .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("section 3a-senators parents birth details"),
           )
           .onlyElementOrException
@@ -93,17 +93,17 @@ object SenateStatementInRelationToCitizenship {
 
       parentsTable <-
         page1
-          .searchRecursivelyUsingPredicate[Table](BlockPredicates.beneath(headingForParentsTable))
+          .recursivelySearchWithPredicate[Table](BlockPredicates.beneath(headingForParentsTable))
           .onlyElementOrException
           .wrapExceptionWithMessage("Couldn't find parents details table")
 
-      parentsDetails <- parseParentalCoupleDetails(resultNavigator, parentsTable)
+      parentsDetails <- parseParentalCoupleDetails(parentsTable)
 
       page2 <- getOrFail(pages, index = 1)
 
       headingForGrandparentsTables <-
         page2
-          .searchRecursivelyUsingPredicate[Line](
+          .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("grandparents birth details"),
           )
           .onlyElementOrException
@@ -111,7 +111,7 @@ object SenateStatementInRelationToCitizenship {
 
       headingForOtherFactors <-
         page2
-          .searchRecursivelyUsingPredicate[Line](
+          .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("factors that may be relevant"),
           )
           .onlyElementOrException
@@ -119,7 +119,7 @@ object SenateStatementInRelationToCitizenship {
 
       grandparentTables =
         page2
-          .searchRecursivelyUsingPredicate[Table](
+          .recursivelySearchWithPredicate[Table](
             BlockPredicates.between(headingForGrandparentsTables, headingForOtherFactors),
           )
           .sorted(byDistanceFrom(PageSide.Top))
@@ -130,8 +130,8 @@ object SenateStatementInRelationToCitizenship {
         case badListOfTables                       => Left(GenericException(s"Expected 2 tables but found ${badListOfTables}"))
       }
 
-      maternalGrandparentsDetails <- parseParentalCoupleDetails(resultNavigator, maternalTable)
-      paternalGrandparentsDetails <- parseParentalCoupleDetails(resultNavigator, paternalTable)
+      maternalGrandparentsDetails <- parseParentalCoupleDetails(maternalTable)
+      paternalGrandparentsDetails <- parseParentalCoupleDetails(paternalTable)
 
       result = SenateStatementInRelationToCitizenship(
         surname,
@@ -150,16 +150,15 @@ object SenateStatementInRelationToCitizenship {
 
   //TODO make this generally available?
   private def getValueFromKey(
-    navigator: ResultNavigator,
     page: PageNumber,
     keyText: String,
     choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key] = _.onlyElementOrException,
+  )(implicit
+    index: AnalysisResultIndex,
   ): ExceptionOr[String] = {
-    import navigator.syntax._
-
     for {
       candidateKeys <- Right {
-        navigator.searchAllResults[KeyValueSet.Key] {
+        Searches.recursivelySearch[KeyValueSet.Key] {
           case k: KeyValueSet.Key if k.pageNumber == page && BlockPredicates.keyHasWordsLike(keyText)(k) => k
         }
       }
@@ -183,34 +182,35 @@ object SenateStatementInRelationToCitizenship {
   }
 
   private def extractDateUnderHeading(
-    resultNavigator: ResultNavigator,
     page: PageNumber,
     heading: String,
+  )(implicit
+    index: AnalysisResultIndex,
   ): ExceptionOr[LocalDate] =
     for {
       heading <-
-        resultNavigator
-          .searchAllResults[Line] {
+        Searches.recursivelySearch[Line] {
             case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
           }
           .sorted(byDistanceFrom(PageSide.Top))
           .headOption
           .toRight(GenericException(s"No heading: '$heading'"))
 
-      date <- extractDate(resultNavigator, page, _.sorted(byDistanceFrom(heading)).headOrException)
+      date <- extractDate(page, _.sorted(byDistanceFrom(heading)).headOrException)
     } yield date
 
   private def extractDate(
-    resultNavigator: ResultNavigator,
     page: PageNumber,
     choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key],
+  )(implicit
+    index: AnalysisResultIndex,
   ): ExceptionOr[LocalDate] = {
     def cleanRawDatePart(raw: String): String = raw.replaceAll("\\D", "")
 
     for {
-      dateOfBirthDay   <- getValueFromKey(resultNavigator, page, "day", choose).map(cleanRawDatePart)
-      dateOfBirthMonth <- getValueFromKey(resultNavigator, page, "month", choose).map(cleanRawDatePart)
-      dateOfBirthYear  <- getValueFromKey(resultNavigator, page, "year", choose).map(cleanRawDatePart)
+      dateOfBirthDay   <- getValueFromKey(page, "day", choose).map(cleanRawDatePart)
+      dateOfBirthMonth <- getValueFromKey(page, "month", choose).map(cleanRawDatePart)
+      dateOfBirthYear  <- getValueFromKey(page, "year", choose).map(cleanRawDatePart)
 
       date <- ExceptionOr.catchIn(
         LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
@@ -219,17 +219,15 @@ object SenateStatementInRelationToCitizenship {
   }
 
   private def parseParentalCoupleDetails(
-    resultNavigator: ResultNavigator,
     table: Table,
+  )(implicit
+    index: AnalysisResultIndex,
   ): ExceptionOr[ParentalCoupleDetails] = {
-    import resultNavigator.syntax._
-
     for {
       femalePlaceOfBirthCell <- table.findCell(2, 2)
       femaleDateOfBirthCell  <- table.findCell(2, 3)
 
       femaleDateOfBirth <- extractDate(
-        resultNavigator,
         femaleDateOfBirthCell.pageNumber,
         keys => keys.filter(BlockPredicates.within(femaleDateOfBirthCell)).onlyElementOrException,
       )
@@ -239,7 +237,6 @@ object SenateStatementInRelationToCitizenship {
       maleDateOfBirthCell  <- table.findCell(3, 3)
 
       maleDateOfBirth <- extractDate(
-        resultNavigator,
         maleDateOfBirthCell.pageNumber,
         keys => keys.filter(BlockPredicates.within(maleDateOfBirthCell)).onlyElementOrException,
       )
