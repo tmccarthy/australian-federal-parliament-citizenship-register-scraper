@@ -1,4 +1,4 @@
-package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results
+package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 
