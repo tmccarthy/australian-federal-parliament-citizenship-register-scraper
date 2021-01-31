@@ -6,17 +6,23 @@ import au.id.tmm.utilities.errors.ExceptionOr
 
 import scala.collection.immutable.ArraySeq
 
-final class LineOps private (line: Line)(implicit index: AnalysisResultIndex) extends BlockCommonOps[Line](line) {
-  def parent: ExceptionOr[Page] =
-    index.parentOf(line)
+final class LineOps[F[_]] private (line: Line)(implicit index: AnalysisResultIndex, F: SyntaxErrorContext[F])
+    extends BlockCommonOps[F, Line](line) {
+  def parent: F[Page] =
+    F.lift(index.parentOf(line))
 
-  def siblings: ExceptionOr[ArraySeq[SiblingsUnderPage]] =
-    index.siblingsOf(line)
+  def siblings: F[ArraySeq[SiblingsUnderPage]] =
+    F.lift(index.siblingsOf(line))
 }
 
 object LineOps {
   trait ToLineOps {
-    implicit def toLineOps(line: Line)(implicit index: AnalysisResultIndex): LineOps =
+    implicit def toLineOps(line: Line)(implicit index: AnalysisResultIndex): LineOps[ExceptionOr] =
+      new LineOps(line)
+  }
+
+  trait ToUnsafeLineOps {
+    implicit def toUnsafeLineOps(line: Line)(implicit index: AnalysisResultIndex): LineOps[SyntaxErrorContext.Unsafe] =
       new LineOps(line)
   }
 }

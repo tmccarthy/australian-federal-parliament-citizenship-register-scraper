@@ -4,12 +4,17 @@ import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{Analysi
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index.{AnalysisResultIndex, Searches}
 import au.id.tmm.utilities.errors.ExceptionOr
 
-final class AnalysisResultOps private (analysisResult: AnalysisResult)(implicit index: AnalysisResultIndex) {
-  def recursivelySearch[B2 <: Block](collect: PartialFunction[Block, B2]): ExceptionOr[LazyList[B2]] =
-    Searches.recursivelySearch(analysisResult)(collect)
+final class AnalysisResultOps[F[_]] private (
+  analysisResult: AnalysisResult,
+)(implicit
+  index: AnalysisResultIndex,
+  F: SyntaxErrorContext[F],
+) {
+  def recursivelySearch[B2 <: Block](collect: PartialFunction[Block, B2]): F[LazyList[B2]] =
+    F.lift(Searches.recursivelySearch(analysisResult)(collect))
 
-  def getPage(pageNumber: PageNumber): ExceptionOr[Page] =
-    ExceptionOr.catchIn(analysisResult.pages.apply(pageNumber.asInt - 1))
+  def getPage(pageNumber: PageNumber): F[Page] =
+    F.lift(ExceptionOr.catchIn(analysisResult.pages.apply(pageNumber.asInt - 1)))
 }
 
 object AnalysisResultOps {
@@ -18,7 +23,16 @@ object AnalysisResultOps {
       analysisResult: AnalysisResult,
     )(implicit
       index: AnalysisResultIndex,
-    ): AnalysisResultOps =
+    ): AnalysisResultOps[ExceptionOr] =
+      new AnalysisResultOps(analysisResult)
+  }
+
+  trait ToUnsafeAnalysisResultOps {
+    implicit def toUnsafeAnalysisResultOps(
+      analysisResult: AnalysisResult,
+    )(implicit
+      index: AnalysisResultIndex,
+    ): AnalysisResultOps[SyntaxErrorContext.Unsafe] =
       new AnalysisResultOps(analysisResult)
   }
 }
