@@ -9,7 +9,7 @@ import scala.collection.immutable.ArraySeq
 import scala.collection.mutable
 
 final class AnalysisResultIndex private (
-  private val analysisResult: AnalysisResult,
+  private[index] val analysisResult: AnalysisResult,
   atomicBlockParents: collection.Map[AtomicBlock, AtomicBlockParent],
   cellParents: collection.Map[Table.Cell, Table],
   tableParents: collection.Map[Table, Page],
@@ -26,17 +26,19 @@ final class AnalysisResultIndex private (
     Either.cond(
       analysisResult == this.analysisResult,
       (),
-      GenericException(s"Different analysis result ${analysisResult.jobId.asString}. Expected ${this.analysisResult.jobId.asString}"),
+      GenericException(
+        s"Different analysis result ${analysisResult.jobId.asString}. Expected ${this.analysisResult.jobId.asString}",
+      ),
     )
 
   def failIfNotPartOfDocument(block: Block): ExceptionOr[Unit] = {
     val isPartOfDocument = block match {
-      case block: AtomicBlock => atomicBlockParents.contains(block)
-      case line: Line => lineParents.contains(line)
-      case page: Page => pages.contains(page)
-      case table: Table => tableParents.contains(table)
-      case cell: Table.Cell => cellParents.contains(cell)
-      case key: KeyValueSet.Key => kvSetsForKeys.contains(key)
+      case block: AtomicBlock       => atomicBlockParents.contains(block)
+      case line: Line               => lineParents.contains(line)
+      case page: Page               => pages.contains(page)
+      case table: Table             => tableParents.contains(table)
+      case cell: Table.Cell         => cellParents.contains(cell)
+      case key: KeyValueSet.Key     => kvSetsForKeys.contains(key)
       case value: KeyValueSet.Value => kvSetsForValues.contains(value)
     }
 
@@ -130,14 +132,13 @@ final class AnalysisResultIndex private (
   private[index] def untypedParentOf(block: Block): ExceptionOr[Option[Block]] =
     for {
       _ <- failIfNotPartOfDocument(block)
-      parent <-
-        block match {
-          case block: AtomicBlock                                  => parentOf(block).map(p => Some(p.asUntypedBlock))
-          case line: Line                                          => parentOf(line).map(Some.apply)
-          case table: Table                                        => parentOf(table).map(Some.apply)
-          case cell: Table.Cell                                    => parentOf(cell).map(Some.apply)
-          case _: Page | _: KeyValueSet.Key | _: KeyValueSet.Value => Right(None)
-        }
+      parent <- block match {
+        case block: AtomicBlock                                  => parentOf(block).map(p => Some(p.asUntypedBlock))
+        case line: Line                                          => parentOf(line).map(Some.apply)
+        case table: Table                                        => parentOf(table).map(Some.apply)
+        case cell: Table.Cell                                    => parentOf(cell).map(Some.apply)
+        case _: Page | _: KeyValueSet.Key | _: KeyValueSet.Value => Right(None)
+      }
     } yield parent
 
 }

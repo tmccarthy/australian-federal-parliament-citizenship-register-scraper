@@ -5,15 +5,17 @@ import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.{AtomicB
 import scala.collection.immutable.ArraySeq
 
 sealed trait AtomicBlockParent {
-  def asUntypedBlock: Block = this match {
-    case AtomicBlockParent.OfLine(line) => line
-    case AtomicBlockParent.OfCell(cell) => cell
-  }
+  def asUntypedBlock: Block =
+    this match {
+      case AtomicBlockParent.OfLine(line) => line
+      case AtomicBlockParent.OfCell(cell) => cell
+    }
 
-  def children: ArraySeq[AtomicBlock] = this match {
-    case AtomicBlockParent.OfLine(line) => line.children
-    case AtomicBlockParent.OfCell(cell) => cell.children
-  }
+  def children: ArraySeq[AtomicBlock] =
+    this match {
+      case AtomicBlockParent.OfLine(line) => line.children
+      case AtomicBlockParent.OfCell(cell) => cell.children
+    }
 }
 
 object AtomicBlockParent {

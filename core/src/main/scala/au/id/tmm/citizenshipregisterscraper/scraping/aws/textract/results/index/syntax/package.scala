@@ -1,7 +1,7 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index
 
 package object syntax
-  extends AnyRef
+    extends AnyRef
     with AnalysisResultOps.ToAnalysisResultOps
     with AtomicBlockOps.ToAtomicBlockOps
     with BlocksOps.ToBlocksOps

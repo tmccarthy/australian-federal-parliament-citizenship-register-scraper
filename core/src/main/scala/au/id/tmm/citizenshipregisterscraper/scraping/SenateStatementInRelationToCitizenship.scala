@@ -4,7 +4,6 @@ import java.time.format.DateTimeFormatter
 import java.time.{LocalDate, Year}
 
 import au.id.tmm.ausgeo.State
-import au.id.tmm.citizenshipregisterscraper.scraping.ScrapingUtilities._
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.ParentalCoupleDetails
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.BlockPredicates
@@ -61,16 +60,14 @@ object SenateStatementInRelationToCitizenship {
     implicit val index: AnalysisResultIndex = AnalysisResultIndex(textractAnalysis)
 
     for {
-      pages <- Right(textractAnalysis.pages)
-
-      page1 <- getOrFail(pages, index = 0)
+      page1 <- textractAnalysis.getPage(PageNumber.`1`)
 
       _ <-
         page1
           .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("Statement in relation to citizenship"),
           )
-          .onlyElementOrException
+          .flatMap(_.onlyElementOrException)
           .wrapExceptionWithMessage("Couldn't find the title")
 
       surname            <- getValueFromKey(PageNumber.`1`, "surname")
@@ -79,34 +76,33 @@ object SenateStatementInRelationToCitizenship {
       placeOfBirth       <- getValueFromKey(PageNumber.`1`, "place of birth")
       citizenshipAtBirth <- getValueFromKey(PageNumber.`1`, "citizenship held at birth")
 
-      dateOfBirth <- extractDateUnderHeading(PageNumber.`1`, "date of birth")
-      dateOfAustralianNaturalisation <-
-        extractDateUnderHeading(PageNumber.`1`, "date of australian naturalisation")
+      dateOfBirth                    <- extractDateUnderHeading(PageNumber.`1`, "date of birth")
+      dateOfAustralianNaturalisation <- extractDateUnderHeading(PageNumber.`1`, "date of australian naturalisation")
 
       headingForParentsTable <-
         page1
           .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("section 3a-senators parents birth details"),
           )
-          .onlyElementOrException
+          .flatMap(_.onlyElementOrException)
           .wrapExceptionWithMessage("Couldn't find heading for parents details")
 
       parentsTable <-
         page1
           .recursivelySearchWithPredicate[Table](BlockPredicates.beneath(headingForParentsTable))
-          .onlyElementOrException
+          .flatMap(_.onlyElementOrException)
           .wrapExceptionWithMessage("Couldn't find parents details table")
 
       parentsDetails <- parseParentalCoupleDetails(parentsTable)
 
-      page2 <- getOrFail(pages, index = 1)
+      page2 <- textractAnalysis.getPage(PageNumber.`2`)
 
       headingForGrandparentsTables <-
         page2
           .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("grandparents birth details"),
           )
-          .onlyElementOrException
+          .flatMap(_.onlyElementOrException)
           .wrapExceptionWithMessage("Couldn't find heading for grandparents details")
 
       headingForOtherFactors <-
@@ -114,16 +110,15 @@ object SenateStatementInRelationToCitizenship {
           .recursivelySearchWithPredicate[Line](
             BlockPredicates.lineHasWordsLike("factors that may be relevant"),
           )
-          .onlyElementOrException
+          .flatMap(_.onlyElementOrException)
           .wrapExceptionWithMessage("Couldn't find other factors heading")
 
-      grandparentTables =
+      grandparentTables <-
         page2
           .recursivelySearchWithPredicate[Table](
             BlockPredicates.between(headingForGrandparentsTables, headingForOtherFactors),
           )
-          .sorted(byDistanceFrom(PageSide.Top))
-          .toList
+          .map(_.sorted(byDistanceFrom(PageSide.Top)).toList)
 
       (maternalTable, paternalTable) <- grandparentTables match {
         case maternalTable :: paternalTable :: Nil => Right((maternalTable, paternalTable))
@@ -155,12 +150,10 @@ object SenateStatementInRelationToCitizenship {
     choose: LazyList[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key] = _.onlyElementOrException,
   )(implicit
     index: AnalysisResultIndex,
-  ): ExceptionOr[String] = {
+  ): ExceptionOr[String] =
     for {
-      candidateKeys <- Right {
-        Searches.recursivelySearch[KeyValueSet.Key] {
-          case k: KeyValueSet.Key if k.pageNumber == page && BlockPredicates.keyHasWordsLike(keyText)(k) => k
-        }
+      candidateKeys <- Searches.recursivelySearchWholeDocument[KeyValueSet.Key] {
+        case k: KeyValueSet.Key if k.pageNumber == page && BlockPredicates.keyHasWordsLike(keyText)(k) => k
       }
 
       matchingKey <- choose(candidateKeys)
@@ -170,7 +163,6 @@ object SenateStatementInRelationToCitizenship {
 
       matchingValue <- matchingKey.value
     } yield matchingValue.readableText
-  }
 
   private def parseStateFrom(rawState: String): ExceptionOr[State] = {
     val cleanedRawState = rawState.replaceAll("""\W""", "")
@@ -188,10 +180,12 @@ object SenateStatementInRelationToCitizenship {
     index: AnalysisResultIndex,
   ): ExceptionOr[LocalDate] =
     for {
+      candidates <- Searches.recursivelySearchWholeDocument[Line] {
+        case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
+      }
+
       heading <-
-        Searches.recursivelySearch[Line] {
-            case l: Line if BlockPredicates.lineHasWordsLike(heading)(l) && l.pageNumber == page => l
-          }
+        candidates
           .sorted(byDistanceFrom(PageSide.Top))
           .headOption
           .toRight(GenericException(s"No heading: '$heading'"))
@@ -222,7 +216,7 @@ object SenateStatementInRelationToCitizenship {
     table: Table,
   )(implicit
     index: AnalysisResultIndex,
-  ): ExceptionOr[ParentalCoupleDetails] = {
+  ): ExceptionOr[ParentalCoupleDetails] =
     for {
       femalePlaceOfBirthCell <- table.findCell(2, 2)
       femaleDateOfBirthCell  <- table.findCell(2, 3)
@@ -251,6 +245,5 @@ object SenateStatementInRelationToCitizenship {
         AncestorDetails.DateOfBirth.Known(maleDateOfBirth),
       ),
     )
-  }
 
 }

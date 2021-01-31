@@ -6,7 +6,8 @@ import au.id.tmm.utilities.errors.ExceptionOr
 
 import scala.collection.immutable.ArraySeq
 
-final class AtomicBlockOps private (atomicBlock: AtomicBlock)(implicit index: AnalysisResultIndex) extends BlockCommonOps[AtomicBlock](atomicBlock) {
+final class AtomicBlockOps private (atomicBlock: AtomicBlock)(implicit index: AnalysisResultIndex)
+    extends BlockCommonOps[AtomicBlock](atomicBlock) {
   def parent: ExceptionOr[AtomicBlockParent] =
     index.parentOf(atomicBlock)
 

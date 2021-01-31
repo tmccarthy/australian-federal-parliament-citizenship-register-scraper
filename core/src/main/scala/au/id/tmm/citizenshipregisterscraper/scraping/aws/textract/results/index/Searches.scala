@@ -10,16 +10,25 @@ import cats.syntax.traverse.toTraverseOps
 
 object Searches {
 
-  private def isAncestor(maybeAncestor: Block, maybeChild: Block)(implicit index: AnalysisResultIndex): ExceptionOr[Boolean] =
+  private def isAncestor(
+    maybeAncestor: Block,
+    maybeChild: Block,
+  )(implicit
+    index: AnalysisResultIndex,
+  ): ExceptionOr[Boolean] =
     for {
       maybeParent <- index.untypedParentOf(maybeChild)
       isAncestorResult <- maybeParent match {
-        case Some(parent) => if (parent == maybeParent) Right(true) else isAncestor(maybeAncestor, parent)
-        case None => Right(false)
+        case Some(parent) => if (maybeParent.contains(parent)) Right(true) else isAncestor(maybeAncestor, parent)
+        case None         => Right(false)
       }
     } yield isAncestorResult
 
-  private def removeBlocksWithSharedAncestors(blocks: Seq[Block])(implicit index: AnalysisResultIndex): ExceptionOr[Seq[Block]] = {
+  private def removeBlocksWithSharedAncestors(
+    blocks: Seq[Block],
+  )(implicit
+    index: AnalysisResultIndex,
+  ): ExceptionOr[Seq[Block]] = {
     @tailrec
     def unsafeGo(remainingBlocksToProcess: Seq[Block], blocksWithoutSharedAncestors: ListSet[Block]): ListSet[Block] =
       remainingBlocksToProcess match {
@@ -49,7 +58,7 @@ object Searches {
   ): ExceptionOr[LazyList[B]] =
     for {
       blocksWithoutSharedAncestors <- removeBlocksWithSharedAncestors(blocks)
-      results <- blocksWithoutSharedAncestors.to(LazyList).flatTraverse(b => recursivelySearch(b)(collect))
+      results                      <- blocksWithoutSharedAncestors.to(LazyList).flatTraverse(b => recursivelySearch(b)(collect))
     } yield results
 
   def recursivelySearch[B <: Block](
@@ -75,8 +84,17 @@ object Searches {
     index: AnalysisResultIndex,
   ): ExceptionOr[LazyList[B]] =
     for {
-      _ <- index.failIfNotAnalysisResult(analysisResult)
+      _       <- index.failIfNotAnalysisResult(analysisResult)
       results <- recursivelySearch(analysisResult.pages)(collect)
+    } yield results
+
+  def recursivelySearchWholeDocument[B <: Block](
+    collect: PartialFunction[Block, B],
+  )(implicit
+    index: AnalysisResultIndex,
+  ): ExceptionOr[LazyList[B]] =
+    for {
+      results <- recursivelySearch(index.analysisResult.pages)(collect)
     } yield results
 
 }

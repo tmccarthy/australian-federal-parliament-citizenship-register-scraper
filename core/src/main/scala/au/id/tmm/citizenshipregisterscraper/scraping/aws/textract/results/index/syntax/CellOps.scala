@@ -6,7 +6,8 @@ import au.id.tmm.utilities.errors.ExceptionOr
 
 import scala.collection.immutable.ArraySeq
 
-final class CellOps private (cell: Table.Cell)(implicit index: AnalysisResultIndex) extends BlockCommonOps[Table.Cell](cell) {
+final class CellOps private (cell: Table.Cell)(implicit index: AnalysisResultIndex)
+    extends BlockCommonOps[Table.Cell](cell) {
   def parent: ExceptionOr[Table] =
     index.parentOf(cell)
 
