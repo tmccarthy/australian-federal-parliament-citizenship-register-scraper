@@ -6,32 +6,14 @@ import au.id.tmm.utilities.errors.ExceptionOr
 
 import scala.collection.immutable.ArraySeq
 
-final class KeyValueSetOps[F[_]] private (
-  keyValueSet: KeyValueSet,
-)(implicit
-  index: AnalysisResultIndex,
-  F: SyntaxErrorContext[F],
-) {
-  def parent: F[Page] = F.lift(index.parentOf(keyValueSet))
-  def siblings: F[ArraySeq[KeyValueSet]] = F.lift(index.siblingsOf(keyValueSet))
+final class KeyValueSetOps private (keyValueSet: KeyValueSet)(implicit index: AnalysisResultIndex) {
+  def parent: ExceptionOr[Page] = index.parentOf(keyValueSet)
+  def siblings: ExceptionOr[ArraySeq[KeyValueSet]] = index.siblingsOf(keyValueSet)
 }
 
 object KeyValueSetOps {
   trait ToKeyValueSetOps {
-    implicit def toKeyValueSetOps(
-      keyValueSet: KeyValueSet,
-    )(implicit
-      index: AnalysisResultIndex,
-    ): KeyValueSetOps[ExceptionOr] =
-      new KeyValueSetOps(keyValueSet)
-  }
-
-  trait ToUnsafeKeyValueSetOps {
-    implicit def toUnsafeKeyValueSetOps(
-      keyValueSet: KeyValueSet,
-    )(implicit
-      index: AnalysisResultIndex,
-    ): KeyValueSetOps[SyntaxErrorContext.Unsafe] =
+    implicit def toKeyValueSetOps(keyValueSet: KeyValueSet)(implicit index: AnalysisResultIndex): KeyValueSetOps =
       new KeyValueSetOps(keyValueSet)
   }
 }

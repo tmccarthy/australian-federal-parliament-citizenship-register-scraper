@@ -6,27 +6,18 @@ import au.id.tmm.utilities.errors.ExceptionOr
 
 import scala.collection.immutable.ArraySeq
 
-final class CellOps[F[_]] private (cell: Table.Cell)(implicit index: AnalysisResultIndex, F: SyntaxErrorContext[F])
-    extends BlockCommonOps[F, Table.Cell](cell) {
-  def parent: F[Table] =
-    F.lift(index.parentOf(cell))
+final class CellOps private (cell: Table.Cell)(implicit index: AnalysisResultIndex)
+    extends BlockCommonOps[Table.Cell](cell) {
+  def parent: ExceptionOr[Table] =
+    index.parentOf(cell)
 
-  def siblings: F[ArraySeq[Table.Cell]] =
-    F.lift(index.siblingsOf(cell))
+  def siblings: ExceptionOr[ArraySeq[Table.Cell]] =
+    index.siblingsOf(cell)
 }
 
 object CellOps {
   trait ToCellOps {
-    implicit def toCellOps(cell: Table.Cell)(implicit index: AnalysisResultIndex): CellOps[ExceptionOr] =
-      new CellOps(cell)
-  }
-
-  trait ToUnsafeCellOps {
-    implicit def toUnsafeCellOps(
-      cell: Table.Cell,
-    )(implicit
-      index: AnalysisResultIndex,
-    ): CellOps[SyntaxErrorContext.Unsafe] =
+    implicit def toCellOps(cell: Table.Cell)(implicit index: AnalysisResultIndex): CellOps =
       new CellOps(cell)
   }
 }
