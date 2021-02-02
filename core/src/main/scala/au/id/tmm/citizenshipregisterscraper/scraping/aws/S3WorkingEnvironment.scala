@@ -3,8 +3,9 @@ package au.id.tmm.citizenshipregisterscraper.scraping.aws
 import java.net.URI
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.S3WorkingEnvironment._
-import au.id.tmm.utilities.codec.binarycodecs._
-import au.id.tmm.utilities.codec.digest._
+import au.id.tmm.digest4s.binarycodecs.syntax._
+import au.id.tmm.digest4s.digest.MD5Digest
+import au.id.tmm.digest4s.digest.syntax._
 import au.id.tmm.utilities.errors.GenericException
 import cats.effect.IO
 import cats.syntax.applicativeError.catsSyntaxApplicativeError
@@ -94,7 +95,7 @@ class S3WorkingEnvironment(
         contentMd5 <- IO.fromEither {
           maybeHeadResponse
             .flatTraverse { response =>
-              response.metadata.asScala.get("Content-MD5").traverse(_.parseBase64)
+              response.metadata.asScala.get("Content-MD5").traverse(_.parseBase64.map(MD5Digest.apply))
             }
         }
 
@@ -157,8 +158,8 @@ object S3WorkingEnvironment {
   private sealed trait CheckResult
 
   private object CheckResult {
-    case object NoObjectAtKey                                                         extends CheckResult
-    case object ObjectAtKeyMissingMetadata                                            extends CheckResult
-    final case class ObjectAtKey(objectContentType: String, checksum: ArraySeq[Byte]) extends CheckResult
+    case object NoObjectAtKey                                                    extends CheckResult
+    case object ObjectAtKeyMissingMetadata                                       extends CheckResult
+    final case class ObjectAtKey(objectContentType: String, checksum: MD5Digest) extends CheckResult
   }
 }

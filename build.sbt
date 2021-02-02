@@ -13,7 +13,7 @@ lazy val root = project
   )
 
 val tmmCollectionsVersion = "0.0.5"
-val tmmUtilsVersion = "0.6.2"
+val tmmUtilsVersion = "0.7.0+3-13171322"
 
 lazy val core = project
   .in(file("core"))
@@ -28,7 +28,7 @@ lazy val core = project
     libraryDependencies += "au.id.tmm.tmm-utils"             %% "tmm-utils-syntax"               % tmmUtilsVersion,
     libraryDependencies += "au.id.tmm.tmm-utils"             %% "tmm-utils-errors"               % tmmUtilsVersion,
     libraryDependencies += "au.id.tmm.tmm-utils"             %% "tmm-utils-cats"                 % tmmUtilsVersion,
-    libraryDependencies += "au.id.tmm.tmm-utils"             %% "tmm-utils-codec"                % tmmUtilsVersion,
+    libraryDependencies += "au.id.tmm.digest4s"              %% "digest4s-core"                  % "0.0.1",
     libraryDependencies += "com.softwaremill.sttp.client3"   %% "core"                           % "3.0.0-RC7",
     libraryDependencies += "com.softwaremill.sttp.client3"   %% "async-http-client-backend-cats" % "3.0.0-RC7",
     libraryDependencies += "org.jsoup"                        % "jsoup"                          % "1.13.1",
