@@ -41,7 +41,19 @@ final case class Page(
   pageNumber: PageNumber,
   geometry: Geometry,
   children: ArraySeq[Page.Child],
-) extends Block
+) extends Block {
+  def lines: ArraySeq[Line] = children.collect {
+    case Page.Child.OfLine(l) => l
+  }
+
+  def tables: ArraySeq[Table] = children.collect {
+    case Page.Child.OfTable(t) => t
+  }
+
+  def keyValueSets: ArraySeq[KeyValueSet] = children.collect {
+    case Page.Child.OfKeyValueSet(kvSet) => kvSet
+  }
+}
 
 object Page {
   sealed trait Child

@@ -1,14 +1,16 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract
 
 import java.time.Duration
+
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.RetryEffect
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.AwsTextractAnalysisClient.logger
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.parsing.Parse
 import au.id.tmm.utilities.errors.GenericException
 import cats.effect.{IO, Resource, Timer}
+import cats.implicits.catsSyntaxApplicativeError
 import org.slf4j.{Logger, LoggerFactory}
-import software.amazon.awssdk.services.textract.model.GetDocumentAnalysisRequest
+import software.amazon.awssdk.services.textract.model.{GetDocumentAnalysisRequest, InvalidJobIdException}
 import software.amazon.awssdk.services.{textract => sdk}
 
 import scala.collection.immutable.ArraySeq
@@ -69,17 +71,20 @@ class AwsTextractAnalysisClient private (
           .build(),
       )
       getAnalysisResponse <- RetryEffect.exponentialRetry(
-        op = IO {
-          textractClient.getDocumentAnalysis(getAnalysisRequest)
-        }.flatMap { response =>
-          response.jobStatus match {
-            case sdk.model.JobStatus.SUCCEEDED   => IO.pure(RetryEffect.Result.Finished(response))
-            case sdk.model.JobStatus.IN_PROGRESS => IO.raiseError(GenericException("Job in progress"))
-            case sdk.model.JobStatus.FAILED | sdk.model.JobStatus.PARTIAL_SUCCESS |
-                sdk.model.JobStatus.UNKNOWN_TO_SDK_VERSION =>
-              IO.pure(RetryEffect.Result.FailedFinished(GenericException("Job failed")))
-          }
-        },
+        op =
+          for {
+            responseOrInvalidJob <- IO(textractClient.getDocumentAnalysis(getAnalysisRequest)).attemptNarrow[InvalidJobIdException]
+            response <- responseOrInvalidJob match {
+              case Left(invalidJobIdException) => IO.pure(RetryEffect.Result.FailedFinished(invalidJobIdException))
+              case Right(response) => response.jobStatus match {
+                case sdk.model.JobStatus.SUCCEEDED   => IO.pure(RetryEffect.Result.Finished(response))
+                case sdk.model.JobStatus.IN_PROGRESS => IO.raiseError(GenericException("Job in progress"))
+                case sdk.model.JobStatus.FAILED | sdk.model.JobStatus.PARTIAL_SUCCESS |
+                     sdk.model.JobStatus.UNKNOWN_TO_SDK_VERSION =>
+                  IO.pure(RetryEffect.Result.FailedFinished(GenericException("Job failed")))
+              }
+            }
+          } yield response,
         initialDelay = Duration.ofSeconds(10),
         factor = 1,
         maxWait = Duration.ofMinutes(2),

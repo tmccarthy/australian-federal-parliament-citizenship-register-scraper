@@ -50,11 +50,15 @@ object SenateStatementInRelationToCitizenship {
     sealed trait DateOfBirth
 
     object DateOfBirth {
-
       final case class Known(localDate: LocalDate) extends DateOfBirth
       final case class YearOnly(year: Year)        extends DateOfBirth
       case object Unknown                          extends DateOfBirth
 
+      private[SenateStatementInRelationToCitizenship] def from(dateValue: DateValue): DateOfBirth = dateValue match {
+        case DateValue.Unfilled => Unknown
+        case DateValue.Of(localDate) => Known(localDate)
+        case DateValue.OfYear(year) => YearOnly(year)
+      }
     }
 
   }
@@ -74,20 +78,28 @@ object SenateStatementInRelationToCitizenship {
             .flatMap(_.onlyElementOrException)
             .wrapExceptionWithMessage("Couldn't find the title")
 
-        surname      <- page1.keysMatching(keyHasWordsLike("surname")).onlyElementOrException.map(_.readableText)
-        otherNames   <- page1.keysMatching(keyHasWordsLike("other names")).onlyElementOrException.map(_.readableText)
-        placeOfBirth <- page1.keysMatching(keyHasWordsLike("place of birth")).onlyElementOrException.map(_.readableText)
+        surname      <- page1.keysMatching(keyHasWordsLike("surname")).onlyElementOrException.flatMap(_.value).map(_.readableText)
+        otherNames   <- page1.keysMatching(keyHasWordsLike("other names")).onlyElementOrException.flatMap(_.value).map(_.readableText)
+        placeOfBirth <- page1.keysMatching(keyHasWordsLike("place of birth")).onlyElementOrException.flatMap(_.value).map(_.readableText)
         citizenshipAtBirth <-
-          page1.keysMatching(keyHasWordsLike("citizenship held at birth")).onlyElementOrException.map(_.readableText)
+          page1.keysMatching(keyHasWordsLike("citizenship held at birth")).onlyElementOrException.flatMap(_.value).map(_.readableText)
         state <-
           page1
             .keysMatching(keyHasWordsLike("state"))
             .onlyElementOrException
+            .flatMap(_.value)
             .map(_.readableText)
             .flatMap(parseStateFrom)
 
-        dateOfBirth                    <- extractDateUnderHeading(page1, "date of birth")
-        dateOfAustralianNaturalisation <- extractDateUnderHeading(page1, "date of australian naturalisation")
+        dateOfBirth                    <- extractDateUnderHeading(page1, "date of birth").flatMap {
+          case DateValue.Of(localDate) => Right(localDate)
+          case d => Left(GenericException(s"Date of birth incomplete $d"))
+        }
+        dateOfAustralianNaturalisation <- extractDateUnderHeading(page1, "date of australian naturalisation").map {
+          case DateValue.Of(localDate) => Some(localDate)
+          case DateValue.OfYear(year) => Some(year.atDay(1))
+          case DateValue.Unfilled => None
+        }
 
         headingForParentsTable <-
           page1
@@ -145,7 +157,7 @@ object SenateStatementInRelationToCitizenship {
           placeOfBirth,
           citizenshipAtBirth,
           dateOfBirth,
-          Some(dateOfAustralianNaturalisation), // TODO need to support this being absent
+          dateOfAustralianNaturalisation,
           parentsDetails,
           maternalGrandparentsDetails,
           paternalGrandparentsDetails,
@@ -167,7 +179,7 @@ object SenateStatementInRelationToCitizenship {
     heading: String,
   )(implicit
     index: AnalysisResultIndex,
-  ): ExceptionOr[LocalDate] =
+  ): ExceptionOr[DateValue] =
     for {
       candidates <- page.recursivelySearchWithPredicate[Line](BlockPredicates.lineHasWordsLike(heading))
 
@@ -185,7 +197,7 @@ object SenateStatementInRelationToCitizenship {
     choose: ArraySeq[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key],
   )(implicit
     index: AnalysisResultIndex,
-  ): ExceptionOr[LocalDate] = {
+  ): ExceptionOr[DateValue] = {
     def cleanRawDatePart(raw: String): String = raw.replaceAll("\\D", "")
 
     for {
@@ -196,9 +208,17 @@ object SenateStatementInRelationToCitizenship {
       dateOfBirthYear <-
         choose(page.keysMatching(keyHasWordsLike("year"))).flatMap(_.value).map(v => cleanRawDatePart(v.readableText))
 
-      date <- ExceptionOr.catchIn(
-        LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d")),
-      )
+      date <- ExceptionOr.flatCatch {
+        if (dateOfBirthDay.isBlank && dateOfBirthMonth.isBlank && dateOfBirthYear.isBlank) {
+          Right(DateValue.Unfilled)
+        } else if (!dateOfBirthYear.isBlank && dateOfBirthMonth.isBlank && dateOfBirthYear.isBlank) {
+          Right(DateValue.OfYear(Year.parse(dateOfBirthYear, DateTimeFormatter.ofPattern("yyyy"))))
+        } else if (!dateOfBirthYear.isBlank && !dateOfBirthMonth.isBlank && !dateOfBirthYear.isBlank) {
+          Right(DateValue.Of(LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d"))))
+        } else {
+          Left(GenericException(s"Bad dates $dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay"))
+        }
+      }
     } yield date
   }
 
@@ -230,12 +250,20 @@ object SenateStatementInRelationToCitizenship {
     } yield ParentalCoupleDetails(
       mother = AncestorDetails(
         femalePlaceOfBirth,
-        AncestorDetails.DateOfBirth.Known(femaleDateOfBirth), // TODO support the other forms
+        AncestorDetails.DateOfBirth.from(femaleDateOfBirth),
       ),
       father = AncestorDetails(
         malePlaceOfBirth,
-        AncestorDetails.DateOfBirth.Known(maleDateOfBirth),
+        AncestorDetails.DateOfBirth.from(maleDateOfBirth),
       ),
     )
+
+  sealed trait DateValue
+
+  object DateValue {
+    case object Unfilled extends DateValue
+    final case class Of(localDate: LocalDate) extends DateValue
+    final case class OfYear(year: Year) extends DateValue
+  }
 
 }

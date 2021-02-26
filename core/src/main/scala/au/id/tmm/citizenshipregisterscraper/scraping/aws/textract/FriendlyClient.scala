@@ -4,11 +4,8 @@ import java.net.URI
 import java.nio.file.{Files, Path}
 import java.time.Duration
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{
-  makeTableIfNoneDefined,
-  waitForTableCreated,
-}
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{Document, DocumentContent, logger}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{makeTableIfNoneDefined, waitForTableCreated}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{CachedJobHasExpired, Document, DocumentContent, logger}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.{RetryEffect, S3Key, toIO}
 import au.id.tmm.digest4s.binarycodecs.syntax._
@@ -16,7 +13,7 @@ import au.id.tmm.digest4s.digest.syntax._
 import au.id.tmm.digest4s.digest.{MD5Digest, SHA512Digest}
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
 import cats.effect.{IO, Resource, Timer}
-import cats.syntax.applicativeError._
+import cats.implicits.catsSyntaxApplicativeError
 import cats.syntax.traverse.toTraverseOps
 import org.slf4j.{Logger, LoggerFactory}
 import software.amazon.awssdk.core.async.AsyncRequestBody
@@ -25,7 +22,7 @@ import software.amazon.awssdk.services.dynamodb.DynamoDbClient
 import software.amazon.awssdk.services.dynamodb.model._
 import software.amazon.awssdk.services.s3.S3AsyncClient
 import software.amazon.awssdk.services.s3.model.PutObjectRequest
-import software.amazon.awssdk.services.textract.model.{DocumentLocation, OutputConfig, S3Object}
+import software.amazon.awssdk.services.textract.model.{DocumentLocation, InvalidJobIdException, OutputConfig, S3Object}
 import sttp.client3._
 import sttp.model.{HeaderNames, Uri => SttpUri}
 
@@ -52,7 +49,15 @@ final class FriendlyClient(
         case Some(jobId) =>
           for {
             _         <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
-            jobResult <- retrieveJobIdResult(jobId)
+            jobResultOrExpired <- retrieveCachedJobIdResult(jobId)
+            jobResult <- jobResultOrExpired.map(IO.pure).getOrElse {
+              for {
+                _ <- IO(logger.info(s"Cached job for document $documentLocation has expired. Rerunning"))
+                _              <- cache.drop(content.sha512Digest)
+                analysisResult <- runAnalysis(content)
+                _              <- cache.update(content.sha512Digest, analysisResult.jobId)
+              } yield analysisResult
+            }
           } yield jobResult
         case None =>
           for {
@@ -111,8 +116,11 @@ final class FriendlyClient(
       bytes.md5,
     )
 
-  private def retrieveJobIdResult(jobId: TextractJobId): IO[AnalysisResult] =
-    analysisClient.getAnalysisResult(jobId)
+  private def retrieveCachedJobIdResult(jobId: TextractJobId): IO[Either[CachedJobHasExpired.type, AnalysisResult]] =
+    analysisClient.getAnalysisResult(jobId).attemptNarrow[InvalidJobIdException].map {
+      case Left(e) => Left(CachedJobHasExpired)
+      case Right(result) => Right(result)
+    }
 
   private def runAnalysis(
     documentContent: DocumentContent,
@@ -223,6 +231,8 @@ object FriendlyClient {
 
     def update(documentDigest: SHA512Digest, textractJobId: TextractJobId): IO[Unit]
 
+    def drop(documentDigest: SHA512Digest): IO[Unit]
+
     def clear: IO[Unit]
   }
 
@@ -307,6 +317,22 @@ object FriendlyClient {
           _ <- waitForTableCreated(client, tableName)
         } yield ()
 
+      override def drop(documentDigest: SHA512Digest): IO[Unit] =
+        for {
+          request <- IO.pure(
+            DeleteItemRequest
+              .builder()
+              .tableName(tableName)
+              .key(
+                Map(
+                  "documentDigest" -> AttributeValue.builder().s(documentDigest.asHexString).build(),
+                ).asJava,
+              )
+              .build(),
+          )
+
+          _ <- IO(client.deleteItem(request))
+        } yield ()
     }
 
     object UsingDynamoDb {
@@ -381,5 +407,7 @@ object FriendlyClient {
     }
 
   }
+
+  private case object CachedJobHasExpired
 
 }

@@ -36,17 +36,18 @@ object RetryEffect {
 
         result <-
           op
+            .attempt
             .flatMap {
-              case Result.Finished(a)       => IO.pure(a)
-              case Result.FailedFinished(t) => IO.raiseError(t)
-            }
-            .handleErrorWith { t =>
-              val timeHasRunOut = Ordering[Duration].gt(elapsed, maxWait)
+              case Right(Result.Finished(a)) => IO.pure(a)
+              case Right(Result.FailedFinished(t)) => IO.raiseError(t)
+              case Left(t) => {
+                val timeHasRunOut = Ordering[Duration].gt(elapsed, maxWait)
 
-              if (timeHasRunOut) {
-                IO.raiseError(t)
-              } else {
-                go(t0, delay.multipliedBy(factor))
+                if (timeHasRunOut) {
+                  IO.raiseError(t)
+                } else {
+                  go(t0, delay.multipliedBy(factor))
+                }
               }
             }
       } yield result
