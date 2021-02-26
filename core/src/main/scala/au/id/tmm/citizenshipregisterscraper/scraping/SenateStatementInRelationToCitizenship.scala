@@ -138,7 +138,7 @@ object SenateStatementInRelationToCitizenship {
         grandparentTables <-
           page2
             .recursivelySearchWithPredicate[Table](
-              BlockPredicates.between(headingForGrandparentsTables, headingForOtherFactors),
+              BlockPredicates.strictlyBetween(headingForGrandparentsTables, headingForOtherFactors),
             )
             .map(_.sorted(byDistanceFrom(PageSide.Top)).toList)
 
@@ -235,7 +235,7 @@ object SenateStatementInRelationToCitizenship {
 
       femaleDateOfBirth <- extractDate(
         page,
-        keys => keys.filter(BlockPredicates.within(femaleDateOfBirthCell)).onlyElementOrException,
+        keys => keys.filter(BlockPredicates.strictlyWithin(femaleDateOfBirthCell)).onlyElementOrException,
       )
       femalePlaceOfBirth = femalePlaceOfBirthCell.readableText
 
@@ -244,7 +244,7 @@ object SenateStatementInRelationToCitizenship {
 
       maleDateOfBirth <- extractDate(
         page,
-        keys => keys.filter(BlockPredicates.within(maleDateOfBirthCell)).onlyElementOrException,
+        keys => keys.filter(BlockPredicates.strictlyWithin(maleDateOfBirthCell)).onlyElementOrException,
       )
       malePlaceOfBirth = malePlaceOfBirthCell.readableText
     } yield ParentalCoupleDetails(

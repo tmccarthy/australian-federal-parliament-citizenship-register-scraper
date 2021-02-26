@@ -1,6 +1,7 @@
 package au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results
 
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering.PageSide
 
 import scala.collection.immutable.ArraySeq
 
@@ -26,20 +27,33 @@ object BlockPredicates {
   private def reduceToSimpleTextArray(string: String): ArraySeq[String] =
     ArraySeq.unsafeWrapArray(string.toLowerCase.replaceAll("""[^\w\s]""", "").split("""\s+"""))
 
-  def beneath(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.lteq(referenceBlock, block)
+  def beneath(referenceBlock: Block)(block: Block): Boolean = GeometricOrdering.byDistanceFrom(PageSide.Top).lteq(referenceBlock, block)
 
-  def above(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.gteq(referenceBlock, block)
+  def above(referenceBlock: Block)(block: Block): Boolean = GeometricOrdering.byDistanceFrom(PageSide.Top).gteq(referenceBlock, block)
 
   def between(referenceBlock1: Block, referenceBlock2: Block)(block: Block): Boolean =
-    if (DocumentDistanceOrdering.lteq(referenceBlock1, referenceBlock2)) {
+    if (GeometricOrdering.byDistanceFrom(PageSide.Top).lteq(referenceBlock1, referenceBlock2)) {
       beneath(referenceBlock1)(block) && above(referenceBlock2)(block)
-    } else if (DocumentDistanceOrdering.gteq(referenceBlock1, referenceBlock2)) {
+    } else if (GeometricOrdering.byDistanceFrom(PageSide.Top).gteq(referenceBlock1, referenceBlock2)) {
       beneath(referenceBlock2)(block) && above(referenceBlock1)(block)
     } else {
       false
     }
 
-  def within(enclosingBlock: Block)(block: Block): Boolean =
+  def strictlyBeneath(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.lteq(referenceBlock, block)
+
+  def strictlyAbove(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.gteq(referenceBlock, block)
+
+  def strictlyBetween(referenceBlock1: Block, referenceBlock2: Block)(block: Block): Boolean =
+    if (DocumentDistanceOrdering.lteq(referenceBlock1, referenceBlock2)) {
+      strictlyBeneath(referenceBlock1)(block) && strictlyAbove(referenceBlock2)(block)
+    } else if (DocumentDistanceOrdering.gteq(referenceBlock1, referenceBlock2)) {
+      strictlyBeneath(referenceBlock2)(block) && strictlyAbove(referenceBlock1)(block)
+    } else {
+      false
+    }
+
+  def strictlyWithin(enclosingBlock: Block)(block: Block): Boolean =
     enclosingBlock.pageNumber == block.pageNumber &&
       enclosingBlock.geometry.boundingBox.top <= block.geometry.boundingBox.top &&
       enclosingBlock.geometry.boundingBox.left <= block.geometry.boundingBox.left &&

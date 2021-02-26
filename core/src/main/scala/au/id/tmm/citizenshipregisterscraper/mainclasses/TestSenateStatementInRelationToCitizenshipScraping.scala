@@ -15,7 +15,7 @@ object TestSenateStatementInRelationToCitizenshipScraping extends MuckingWithDyn
 
   private def useDisclosure(documentReference: senate.DocumentReference): Boolean =
     Set(
-      "Abetz",
+//      "Abetz",
       "Askew",
     ).exists(documentReference.senatorName.contains)
 
