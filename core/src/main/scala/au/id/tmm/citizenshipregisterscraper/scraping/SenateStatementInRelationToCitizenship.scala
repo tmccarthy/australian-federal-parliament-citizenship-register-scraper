@@ -6,16 +6,18 @@ import java.time.{LocalDate, Year}
 import au.id.tmm.ausgeo.State
 import au.id.tmm.citizenshipregisterscraper.scraping.SenateStatementInRelationToCitizenship.ParentalCoupleDetails
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model._
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.BlockPredicates
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.BlockPredicates.keyHasWordsLike
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.GeometricOrdering._
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index.AnalysisResultIndex
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.index.syntax._
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.results.{BlockPredicates, ChooseBlock}
 import au.id.tmm.collections.syntax.toIterableOps
 import au.id.tmm.utilities.errors.syntax._
 import au.id.tmm.utilities.errors.{ExceptionOr, GenericException}
+import cats.syntax.traverse.toTraverseOps
 
 import scala.collection.immutable.ArraySeq
+import scala.util.matching.Regex
 
 final case class SenateStatementInRelationToCitizenship(
   surname: String,
@@ -189,38 +191,8 @@ object SenateStatementInRelationToCitizenship {
           .headOption
           .toRight(GenericException(s"No heading: '$heading'"))
 
-      date <- extractDate(page, _.sorted(byDistanceFrom(heading)).headOrException)
+      date <- DateValue.fromKVSetsOn(page, ChooseBlock.firstBy(byDistanceFrom(heading)))
     } yield date
-
-  private def extractDate(
-    page: Page,
-    choose: ArraySeq[KeyValueSet.Key] => ExceptionOr[KeyValueSet.Key],
-  )(implicit
-    index: AnalysisResultIndex,
-  ): ExceptionOr[DateValue] = {
-    def cleanRawDatePart(raw: String): String = raw.replaceAll("\\D", "")
-
-    for {
-      dateOfBirthDay <-
-        choose(page.keysMatching(keyHasWordsLike("day"))).flatMap(_.value).map(v => cleanRawDatePart(v.readableText))
-      dateOfBirthMonth <-
-        choose(page.keysMatching(keyHasWordsLike("month"))).flatMap(_.value).map(v => cleanRawDatePart(v.readableText))
-      dateOfBirthYear <-
-        choose(page.keysMatching(keyHasWordsLike("year"))).flatMap(_.value).map(v => cleanRawDatePart(v.readableText))
-
-      date <- ExceptionOr.flatCatch {
-        if (dateOfBirthDay.isBlank && dateOfBirthMonth.isBlank && dateOfBirthYear.isBlank) {
-          Right(DateValue.Unfilled)
-        } else if (!dateOfBirthYear.isBlank && dateOfBirthMonth.isBlank && dateOfBirthYear.isBlank) {
-          Right(DateValue.OfYear(Year.parse(dateOfBirthYear, DateTimeFormatter.ofPattern("yyyy"))))
-        } else if (!dateOfBirthYear.isBlank && !dateOfBirthMonth.isBlank && !dateOfBirthYear.isBlank) {
-          Right(DateValue.Of(LocalDate.parse(s"$dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay", DateTimeFormatter.ofPattern("yyyy-M-d"))))
-        } else {
-          Left(GenericException(s"Bad dates $dateOfBirthYear-$dateOfBirthMonth-$dateOfBirthDay"))
-        }
-      }
-    } yield date
-  }
 
   private def parseParentalCoupleDetails(
     table: Table,
@@ -233,19 +205,13 @@ object SenateStatementInRelationToCitizenship {
       femalePlaceOfBirthCell <- table.findCell(2, 2)
       femaleDateOfBirthCell  <- table.findCell(2, 3)
 
-      femaleDateOfBirth <- extractDate(
-        page,
-        keys => keys.filter(BlockPredicates.strictlyWithin(femaleDateOfBirthCell)).onlyElementOrException,
-      )
+      femaleDateOfBirth <- DateValue.from(femaleDateOfBirthCell)
       femalePlaceOfBirth = femalePlaceOfBirthCell.readableText
 
       malePlaceOfBirthCell <- table.findCell(3, 2)
       maleDateOfBirthCell  <- table.findCell(3, 3)
 
-      maleDateOfBirth <- extractDate(
-        page,
-        keys => keys.filter(BlockPredicates.strictlyWithin(maleDateOfBirthCell)).onlyElementOrException,
-      )
+      maleDateOfBirth <- DateValue.from(maleDateOfBirthCell)
       malePlaceOfBirth = malePlaceOfBirthCell.readableText
     } yield ParentalCoupleDetails(
       mother = AncestorDetails(
@@ -264,6 +230,89 @@ object SenateStatementInRelationToCitizenship {
     case object Unfilled extends DateValue
     final case class Of(localDate: LocalDate) extends DateValue
     final case class OfYear(year: Year) extends DateValue
+
+    def from(cell: Table.Cell)(implicit
+      index: AnalysisResultIndex,
+    ): ExceptionOr[DateValue] =
+      for {
+        page <- cell.parent.flatMap(_.parent)
+        date <- fromKVSetsOn(page, ChooseBlock.onlyMatching(BlockPredicates.strictlyWithin(cell))) orElse from(cell.readableText)
+      } yield date
+
+    def from(text: String): ExceptionOr[DateValue] = ExceptionOr.flatCatch {
+      def fullDate = onlyMatchFor("""(\d{1,2})\s+/\s+(\d{1,2})\s+/\s+(\d{4})""".r, text).flatMap {
+        case ArraySeq(day, month, year) => Right(Of(LocalDate.of(year, month, day)))
+        case bad => Left(GenericException(s"Bad date fields $bad"))
+      }
+
+      def fullDateSmallYear = onlyMatchFor("""(\d{1,2})\s+/\s+(\d{1,2})\s+/\s+(\d{2})""".r, text).flatMap {
+        case ArraySeq(day, month, year) => Right(Of(LocalDate.of(year + 1900, month, day)))
+        case bad => Left(GenericException(s"Bad date fields $bad"))
+      }
+
+      def year = onlyMatchFor("""/\s+/\s+(\d{4})""".r, text).flatMap {
+        case ArraySeq(year) => Right(OfYear(Year.of(year)))
+        case bad => Left(GenericException(s"Bad year fields $bad"))
+      }
+
+      def empty = onlyMatchFor("""/\s+/""".r, text).flatMap {
+        case ArraySeq() => Right(Unfilled)
+        case bad => Left(GenericException(s"Bad year fields $bad"))
+      }
+
+      (fullDate orElse fullDateSmallYear orElse year orElse empty)
+        .wrapExceptionWithMessage(s"For $text")
+    }
+
+    private def onlyMatchFor(pattern: Regex, string: String): ExceptionOr[ArraySeq[Int]] = {
+      pattern.findAllMatchIn(string)
+        .map { regexMatch =>
+          regexMatch.subgroups.to(ArraySeq)
+        }
+        .to(ArraySeq)
+        .onlyElementOrException
+        .flatMap { strings =>
+          strings.traverse { s =>
+            ExceptionOr.catchIn(s.toInt)
+          }
+        }
+    }
+
+    def fromKVSetsOn(page: Page, choose: ChooseBlock[KeyValueSet.Key])(implicit
+      index: AnalysisResultIndex,
+    ): ExceptionOr[DateValue] =
+      for {
+        dayBlock <-
+          choose.chooseFrom(page.keysMatching(keyHasWordsLike("day"))).flatMap(_.value)
+        monthBlock <-
+          choose.chooseFrom(page.keysMatching(keyHasWordsLike("month"))).flatMap(_.value)
+        yearBlock <-
+          choose.chooseFrom(page.keysMatching(keyHasWordsLike("year"))).flatMap(_.value)
+
+        date <- fromBlocks(yearBlock, monthBlock, dayBlock)
+      } yield date
+
+    def fromBlocks(
+      yearBlock: ReadableText,
+      monthBlock: ReadableText,
+      dayBlock: ReadableText,
+    ): ExceptionOr[DateValue] = ExceptionOr.flatCatch {
+      val rawYear = cleanRawDatePart(yearBlock.readableText)
+      val rawMonth = cleanRawDatePart(monthBlock.readableText)
+      val rawDay = cleanRawDatePart(dayBlock.readableText)
+
+      if (rawDay.isBlank && rawMonth.isBlank && rawYear.isBlank) {
+        Right(DateValue.Unfilled)
+      } else if (!rawYear.isBlank && rawMonth.isBlank && rawYear.isBlank) {
+        Right(DateValue.OfYear(Year.parse(rawYear, DateTimeFormatter.ofPattern("yyyy"))))
+      } else if (!rawYear.isBlank && !rawMonth.isBlank && !rawYear.isBlank) {
+        Right(DateValue.Of(LocalDate.parse(s"$rawYear-$rawMonth-$rawDay", DateTimeFormatter.ofPattern("yyyy-M-d"))))
+      } else {
+        Left(GenericException(s"Bad dates $rawYear-$rawMonth-$rawDay"))
+      }
+    }
+
+    private def cleanRawDatePart(raw: String): String = raw.replaceAll("\\D", "")
   }
 
 }
