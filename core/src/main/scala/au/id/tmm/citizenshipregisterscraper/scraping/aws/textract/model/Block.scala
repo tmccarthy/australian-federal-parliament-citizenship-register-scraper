@@ -42,17 +42,20 @@ final case class Page(
   geometry: Geometry,
   children: ArraySeq[Page.Child],
 ) extends Block {
-  def lines: ArraySeq[Line] = children.collect {
-    case Page.Child.OfLine(l) => l
-  }
+  def lines: ArraySeq[Line] =
+    children.collect {
+      case Page.Child.OfLine(l) => l
+    }
 
-  def tables: ArraySeq[Table] = children.collect {
-    case Page.Child.OfTable(t) => t
-  }
+  def tables: ArraySeq[Table] =
+    children.collect {
+      case Page.Child.OfTable(t) => t
+    }
 
-  def keyValueSets: ArraySeq[KeyValueSet] = children.collect {
-    case Page.Child.OfKeyValueSet(kvSet) => kvSet
-  }
+  def keyValueSets: ArraySeq[KeyValueSet] =
+    children.collect {
+      case Page.Child.OfKeyValueSet(kvSet) => kvSet
+    }
 }
 
 object Page {

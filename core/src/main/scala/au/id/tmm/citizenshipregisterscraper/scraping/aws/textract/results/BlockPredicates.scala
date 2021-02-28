@@ -27,9 +27,11 @@ object BlockPredicates {
   private def reduceToSimpleTextArray(string: String): ArraySeq[String] =
     ArraySeq.unsafeWrapArray(string.toLowerCase.replaceAll("""[^\w\s]""", "").split("""\s+"""))
 
-  def beneath(referenceBlock: Block)(block: Block): Boolean = GeometricOrdering.byDistanceFrom(PageSide.Top).lteq(referenceBlock, block)
+  def beneath(referenceBlock: Block)(block: Block): Boolean =
+    GeometricOrdering.byDistanceFrom(PageSide.Top).lteq(referenceBlock, block)
 
-  def above(referenceBlock: Block)(block: Block): Boolean = GeometricOrdering.byDistanceFrom(PageSide.Top).gteq(referenceBlock, block)
+  def above(referenceBlock: Block)(block: Block): Boolean =
+    GeometricOrdering.byDistanceFrom(PageSide.Top).gteq(referenceBlock, block)
 
   def between(referenceBlock1: Block, referenceBlock2: Block)(block: Block): Boolean =
     if (GeometricOrdering.byDistanceFrom(PageSide.Top).lteq(referenceBlock1, referenceBlock2)) {
@@ -40,7 +42,8 @@ object BlockPredicates {
       false
     }
 
-  def strictlyBeneath(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.lteq(referenceBlock, block)
+  def strictlyBeneath(referenceBlock: Block)(block: Block): Boolean =
+    DocumentDistanceOrdering.lteq(referenceBlock, block)
 
   def strictlyAbove(referenceBlock: Block)(block: Block): Boolean = DocumentDistanceOrdering.gteq(referenceBlock, block)
 

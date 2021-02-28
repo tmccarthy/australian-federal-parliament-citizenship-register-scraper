@@ -15,13 +15,15 @@ object TestSenateStatementInRelationToCitizenshipScraping extends MuckingWithDyn
 
   private def useDisclosure(documentReference: senate.DocumentReference): Boolean =
     Set(
-//      "Abetz",
-//      "Askew",
-//      "Birmingham",
-//      "Canavan",
-      "Carr",
-//      "Cash",
-//      "Chisholm",
+      "Abetz",
+      "Askew",
+      "Birmingham",
+//      "Canavan", // TODO failing to pickup the key for "place of birth"
+//      "Carr", // TODO failing to pickup the key for "citizenship held at birth"
+      "Cash",
+//      "Chisholm", // TODO failing to pickup the key for "citizenship held at birth"
+      "Whish-Wilson",
+      "Wong",
     ).exists(documentReference.senatorName.contains)
 
   override def runWithDynamo(

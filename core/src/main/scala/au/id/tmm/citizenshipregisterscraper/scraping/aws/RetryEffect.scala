@@ -35,10 +35,9 @@ object RetryEffect {
         elapsed = Duration.between(t0, now)
 
         result <-
-          op
-            .attempt
+          op.attempt
             .flatMap {
-              case Right(Result.Finished(a)) => IO.pure(a)
+              case Right(Result.Finished(a))       => IO.pure(a)
               case Right(Result.FailedFinished(t)) => IO.raiseError(t)
               case Left(t) => {
                 val timeHasRunOut = Ordering[Duration].gt(elapsed, maxWait)

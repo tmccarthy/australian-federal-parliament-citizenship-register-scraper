@@ -71,20 +71,21 @@ class AwsTextractAnalysisClient private (
           .build(),
       )
       getAnalysisResponse <- RetryEffect.exponentialRetry(
-        op =
-          for {
-            responseOrInvalidJob <- IO(textractClient.getDocumentAnalysis(getAnalysisRequest)).attemptNarrow[InvalidJobIdException]
-            response <- responseOrInvalidJob match {
-              case Left(invalidJobIdException) => IO.pure(RetryEffect.Result.FailedFinished(invalidJobIdException))
-              case Right(response) => response.jobStatus match {
+        op = for {
+          responseOrInvalidJob <-
+            IO(textractClient.getDocumentAnalysis(getAnalysisRequest)).attemptNarrow[InvalidJobIdException]
+          response <- responseOrInvalidJob match {
+            case Left(invalidJobIdException) => IO.pure(RetryEffect.Result.FailedFinished(invalidJobIdException))
+            case Right(response) =>
+              response.jobStatus match {
                 case sdk.model.JobStatus.SUCCEEDED   => IO.pure(RetryEffect.Result.Finished(response))
                 case sdk.model.JobStatus.IN_PROGRESS => IO.raiseError(GenericException("Job in progress"))
                 case sdk.model.JobStatus.FAILED | sdk.model.JobStatus.PARTIAL_SUCCESS |
-                     sdk.model.JobStatus.UNKNOWN_TO_SDK_VERSION =>
+                    sdk.model.JobStatus.UNKNOWN_TO_SDK_VERSION =>
                   IO.pure(RetryEffect.Result.FailedFinished(GenericException("Job failed")))
               }
-            }
-          } yield response,
+          }
+        } yield response,
         initialDelay = Duration.ofSeconds(10),
         factor = 1,
         maxWait = Duration.ofMinutes(2),

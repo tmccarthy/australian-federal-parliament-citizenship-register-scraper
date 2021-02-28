@@ -4,8 +4,16 @@ import java.net.URI
 import java.nio.file.{Files, Path}
 import java.time.Duration
 
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{makeTableIfNoneDefined, waitForTableCreated}
-import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{CachedJobHasExpired, Document, DocumentContent, logger}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.JobIdCache.UsingDynamoDb.{
+  makeTableIfNoneDefined,
+  waitForTableCreated,
+}
+import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.FriendlyClient.{
+  CachedJobHasExpired,
+  Document,
+  DocumentContent,
+  logger,
+}
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.textract.model.AnalysisResult
 import au.id.tmm.citizenshipregisterscraper.scraping.aws.{RetryEffect, S3Key, toIO}
 import au.id.tmm.digest4s.binarycodecs.syntax._
@@ -48,11 +56,11 @@ final class FriendlyClient(
       result <- possibleJobId match {
         case Some(jobId) =>
           for {
-            _         <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
+            _                  <- IO(logger.info(s"Found cached job for document $documentLocation. JobId ${jobId.asString}"))
             jobResultOrExpired <- retrieveCachedJobIdResult(jobId)
             jobResult <- jobResultOrExpired.map(IO.pure).getOrElse {
               for {
-                _ <- IO(logger.info(s"Cached job for document $documentLocation has expired. Rerunning"))
+                _              <- IO(logger.info(s"Cached job for document $documentLocation has expired. Rerunning"))
                 _              <- cache.drop(content.sha512Digest)
                 analysisResult <- runAnalysis(content)
                 _              <- cache.update(content.sha512Digest, analysisResult.jobId)
@@ -118,7 +126,7 @@ final class FriendlyClient(
 
   private def retrieveCachedJobIdResult(jobId: TextractJobId): IO[Either[CachedJobHasExpired.type, AnalysisResult]] =
     analysisClient.getAnalysisResult(jobId).attemptNarrow[InvalidJobIdException].map {
-      case Left(e) => Left(CachedJobHasExpired)
+      case Left(e)       => Left(CachedJobHasExpired)
       case Right(result) => Right(result)
     }
 
