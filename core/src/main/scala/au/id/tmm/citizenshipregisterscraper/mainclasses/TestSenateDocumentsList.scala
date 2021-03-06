@@ -2,7 +2,7 @@ package au.id.tmm.citizenshipregisterscraper.mainclasses
 
 import java.net.URI
 
-import au.id.tmm.citizenshipregisterscraper.documents.senate.ListDocuments
+import au.id.tmm.citizenshipregisterscraper.documents.senate.{DocumentReference, ListDocuments}
 import cats.effect.{ExitCode, IO, IOApp}
 
 object TestSenateDocumentsList extends IOApp {
@@ -14,6 +14,10 @@ object TestSenateDocumentsList extends IOApp {
         ),
       )
       list <- ListDocuments.from(page)
-      _    <- IO(list.foreach(println))
+      _    <- IO {
+        list.foreach {
+          case DocumentReference(state, senatorName, lastUpdated, documentLocation) => println(List(senatorName, state, lastUpdated, documentLocation).mkString("\t"))
+        }
+      }
     } yield ExitCode.Success
 }
